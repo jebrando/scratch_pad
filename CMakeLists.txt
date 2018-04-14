@@ -7,7 +7,11 @@ project(scratch_pad)
 
 set(INCLUDE_DIR ".")
 
-include_directories(${HSM_INCLUDE_DIR})
+add_subdirectory(c-utility)
+
+compileAsC99()
+
+include_directories(${HSM_INCLUDE_DIR} ${SHARED_UTIL_INC_FOLDER})
 
 set(source_c_files
     ./scratch_pad.c
@@ -24,9 +28,9 @@ IF(WIN32)
     add_definitions(/WX)
 ELSE()
     # Make warning as error
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror -pedantic -Wno-variadic-macros -fPIC")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -pedantic -Wno-variadic-macros -fPIC")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror -Wno-variadic-macros -fPIC")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -Wno-variadic-macros -fPIC")
 ENDIF(WIN32)
 
 add_executable(scratch_pad ${source_c_files})
-#target_link_libraries(scratch_pad ${hsm_library})
+target_link_libraries(scratch_pad aziotsharedutil)

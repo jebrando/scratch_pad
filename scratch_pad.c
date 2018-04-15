@@ -7,6 +7,23 @@
 #include "azure_c_shared_utility/base64.h"
 #include "azure_c_shared_utility/buffer_.h"
 
+#define ASN1_MARKER         0x30
+#define LENGTH_EXTENTION    0x82
+#define ASN1_INDEX_         0xA0 // ??? is this A1, A2, A3
+
+#define ASN1_TYPE_INTEGER   0x02
+
+#define EXTENDED_LEN_FLAG   0x80
+#define LEN_FLAG_COUNT      0x7F
+
+typedef enum X509_ASN1_STATE_TAG
+{
+    STATE_INITIAL,
+    STATE_TBS_CERTIFICATE,
+    STATE_SIGNATURE_ALGO,
+    STATE_SIGNATURE_VALUE
+} X509_ASN1_STATE;
+
 typedef struct CERT_SEQUENCE_TAG
 {
     uint32_t version;
@@ -22,7 +39,7 @@ typedef struct CERT_SEQUENCE_TAG
 } CERT_SEQUENCE;
 
 static const char* TARGET_CERT = "./cert/rsa_cert.pem";
-static const char* BINARY_DATA = "./cert/rsa_cert.bin";
+//static const char* BINARY_DATA = "./cert/rsa_cert.bin";
 
 static char* open_certificate(const char* filename)
 {
@@ -64,6 +81,24 @@ static char* open_certificate(const char* filename)
     return result;
 }
 
+static void save_data(const char* filename, const unsigned char* data, size_t length)
+{
+    FILE* file_ptr = fopen(filename, "wb");
+    if (file_ptr == NULL)
+    {
+        (void)printf("Failure opening cert: %s", filename);
+    }
+    else
+    {
+        size_t ret_len = fwrite(data, sizeof(unsigned char), length, file_ptr);
+        if (ret_len != length)
+        {
+            (void)printf("Failure reading certificate");
+        }
+        fclose(file_ptr);
+    }
+}
+
 static BUFFER_HANDLE decode_cert(char* cert_pem)
 {
     // Go through the cert and remove the begin and end
@@ -96,22 +131,55 @@ static BUFFER_HANDLE decode_cert(char* cert_pem)
     return Base64_Decoder(decode_val);
 }
 
-static void save_data(const char* filename, const unsigned char* data, size_t length)
+static size_t calculate_size(unsigned char* buff, size_t* pos_change)
 {
-    FILE* file_ptr = fopen(filename, "wb");
-    if (file_ptr == NULL)
+    // TODO: Read spec to see the max size field
+    size_t result;
+    if ((buff[0] & EXTENDED_LEN_FLAG))
     {
-        (void)printf("Failure opening cert: %s", filename);
+        // We are using more than 128 bits, let see how many
+        size_t num_bits = buff[0] & LEN_FLAG_COUNT;
+        result = 0;
+        for (size_t idx = 0; idx < num_bits; idx++)
+        {
+            unsigned char temp = buff[idx+1];
+            if (idx == 0)
+            {
+                result = temp;
+            }
+            else
+            {
+                result = (result << 8)+temp;
+            }
+        }
+        *pos_change += num_bits;
     }
     else
     {
-        size_t ret_len = fwrite(data, sizeof(unsigned char), length, file_ptr);
-        if (ret_len != length)
-        {
-            (void)printf("Failure reading certificate");
-        }
-        fclose(file_ptr);
+        // The buffer is the size
+        result = buff[0];
+        *pos_change = 1;
     }
+    return result;
+}
+
+static size_t parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STATE state)
+{
+    size_t result = 0;
+    for (size_t index = 0; index < len; index++)
+    {
+        if (section[index] == ASN1_MARKER)
+        {
+            size_t section_size = calculate_size(&section[index], &index);
+            parse_asn1_data(section+index, section_size, STATE_TBS_CERTIFICATE);
+
+        }
+        else
+        {
+
+        }
+    }
+    return result;
 }
 
 static int parse_certificate(const char* filename)
@@ -127,7 +195,7 @@ static int parse_certificate(const char* filename)
         BUFFER_HANDLE decoded_cert;
 
         decoded_cert = decode_cert(certificate);
-
+        // Free the certificate data
         free(certificate);
         if (decoded_cert == NULL)
         {
@@ -135,6 +203,11 @@ static int parse_certificate(const char* filename)
         }
         else
         {
+            unsigned char* cert_buffer = BUFFER_u_char(decoded_cert);
+            size_t cert_buff_len = BUFFER_length(decoded_cert);
+            // Read 
+            parse_asn1_data(cert_buffer, cert_buff_len, STATE_INITIAL);
+
             //save_data(BINARY_DATA, BUFFER_u_char(decoded_cert), BUFFER_length(decoded_cert));
             BUFFER_delete(decoded_cert);
             result = 0;
@@ -146,8 +219,6 @@ static int parse_certificate(const char* filename)
 int main(void)
 {
     int result;
-
     result = parse_certificate(TARGET_CERT);
-
     return result;
 }

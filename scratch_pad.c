@@ -170,7 +170,9 @@ static size_t parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STAT
     {
         if (section[index] == ASN1_MARKER)
         {
-            size_t section_size = calculate_size(&section[index], &index);
+            size_t offset;
+            size_t section_size = calculate_size(&section[index], &offset);
+            index += offset;
             parse_asn1_data(section+index, section_size, STATE_TBS_CERTIFICATE);
 
         }

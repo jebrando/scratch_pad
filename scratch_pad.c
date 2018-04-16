@@ -24,7 +24,13 @@ typedef enum X509_ASN1_STATE_TAG
     STATE_SIGNATURE_VALUE
 } X509_ASN1_STATE;
 
-typedef struct CERT_SEQUENCE_TAG
+typedef enum ASN1_TYPE_TAG
+{
+    ASN1_INTEGER = 0x2,
+    ASN1_CHAR_ARRAY
+} ASN1_TYPE;
+
+typedef struct TBS_CERT_INFO_TAG
 {
     uint32_t version;
     uint32_t serial_num;
@@ -36,10 +42,22 @@ typedef struct CERT_SEQUENCE_TAG
     unsigned char issuerUniqueId[1]; // Optional
     //subjectUniqueID[2];
     //extensions[3];
-} CERT_SEQUENCE;
+} TBS_CERT_INFO;
 
+typedef struct ASN1_OBJECT_TAG
+{
+    ASN1_TYPE type;
+    uint32_t length;
+    const unsigned char* value;
+} ASN1_OBJECT;
+
+#ifdef WIN32
+    static const char* TARGET_CERT = "C:\\Enlistment\\scratch_pad\\cert\\rsa_cert.pem";
+    //static const char* BINARY_DATA = "./cert/rsa_cert.bin";
+#else
 static const char* TARGET_CERT = "./cert/rsa_cert.pem";
 //static const char* BINARY_DATA = "./cert/rsa_cert.bin";
+#endif
 
 static char* open_certificate(const char* filename)
 {
@@ -101,12 +119,12 @@ static void save_data(const char* filename, const unsigned char* data, size_t le
 
 static BUFFER_HANDLE decode_cert(char* cert_pem)
 {
-    // Go through the cert and remove the begin and end
+    // Go through the cert and remove the begin and end tags
     size_t length = strlen(cert_pem);
     int delimit_count = 0;
     for (size_t index = length-1; index > 0; index--)
     {
-        if (cert_pem[index] != '-' && cert_pem[index] != '\n')
+        if (cert_pem[index] != '-' && cert_pem[index] != '\n' && cert_pem[index] != '\r')
         {
             if (delimit_count == 0)
             {
@@ -152,7 +170,7 @@ static size_t calculate_size(unsigned char* buff, size_t* pos_change)
                 result = (result << 8)+temp;
             }
         }
-        *pos_change += num_bits;
+        *pos_change = num_bits+1;
     }
     else
     {
@@ -163,20 +181,67 @@ static size_t calculate_size(unsigned char* buff, size_t* pos_change)
     return result;
 }
 
-static size_t parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STATE state)
+static int parse_asn1_object(unsigned char* tbs_info, ASN1_OBJECT* asn1_obj)
+{
+    int result = 0;
+    // determine the type
+    switch (tbs_info[0])
+    {
+        case 0x2:
+            asn1_obj->type = ASN1_INTEGER;
+            break;
+        default:
+            result = __LINE__;
+            break;
+    }
+    if (result == 0)
+    {
+        asn1_obj->length = tbs_info[1];
+        asn1_obj->value = &tbs_info[2];
+    }
+    return result;
+}
+
+static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len)
+{
+    int result;
+    size_t curr_idx = 0;
+    // Figure out version
+    if (tbs_info[curr_idx] == 0xA0)
+    {
+        curr_idx++;
+        if (tbs_info[curr_idx] == 0x3) // Length
+        {
+            ASN1_OBJECT ver_obj;
+            curr_idx++;
+            parse_asn1_object(&tbs_info[curr_idx], &version);
+
+        }
+    }
+    else
+    {
+        result = __LINE__;
+    }
+    return result;
+}
+
+static size_t parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STATE state, TBS_CERT_INFO* tbs_cert_info)
 {
     size_t result = 0;
     for (size_t index = 0; index < len; index++)
     {
         if (section[index] == ASN1_MARKER)
         {
-            size_t section_size = calculate_size(&section[index], &index);
+            index++;
+            size_t offset;
+            size_t section_size = calculate_size(&section[index], &offset);
+            index += offset;
             parse_asn1_data(section+index, section_size, STATE_TBS_CERTIFICATE);
 
         }
-        else
+        else if (state == STATE_TBS_CERTIFICATE)
         {
-
+            result = parse_tbs_cert_info(&section[index], len);
         }
     }
     return result;
@@ -206,7 +271,8 @@ static int parse_certificate(const char* filename)
             unsigned char* cert_buffer = BUFFER_u_char(decoded_cert);
             size_t cert_buff_len = BUFFER_length(decoded_cert);
             // Read 
-            parse_asn1_data(cert_buffer, cert_buff_len, STATE_INITIAL);
+            TBS_CERT_INFO tbs_cert_info;
+            parse_asn1_data(cert_buffer, cert_buff_len, STATE_INITIAL, &tbs_cert_info);
 
             //save_data(BINARY_DATA, BUFFER_u_char(decoded_cert), BUFFER_length(decoded_cert));
             BUFFER_delete(decoded_cert);
@@ -219,6 +285,7 @@ static int parse_certificate(const char* filename)
 int main(void)
 {
     int result;
+    TBS_CERT_INFO tbs_cert_info;
     result = parse_certificate(TARGET_CERT);
     return result;
 }

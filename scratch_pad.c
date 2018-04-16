@@ -202,7 +202,7 @@ static int parse_asn1_object(unsigned char* tbs_info, ASN1_OBJECT* asn1_obj)
     return result;
 }
 
-static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len)
+static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INFO* tbs_cert_info)
 {
     int result;
     size_t curr_idx = 0;
@@ -214,8 +214,9 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len)
         {
             ASN1_OBJECT ver_obj;
             curr_idx++;
-            parse_asn1_object(&tbs_info[curr_idx], &version);
-
+            parse_asn1_object(&tbs_info[curr_idx], &ver_obj);
+            // Validate version
+            memcpy(tbs_cert_info->version, ver_obj.value, sizeof(uint32_t));
         }
     }
     else
@@ -236,12 +237,12 @@ static size_t parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STAT
             size_t offset;
             size_t section_size = calculate_size(&section[index], &offset);
             index += offset;
-            parse_asn1_data(section+index, section_size, STATE_TBS_CERTIFICATE);
+            parse_asn1_data(section+index, section_size, STATE_TBS_CERTIFICATE, tbs_cert_info);
 
         }
         else if (state == STATE_TBS_CERTIFICATE)
         {
-            result = parse_tbs_cert_info(&section[index], len);
+            result = parse_tbs_cert_info(&section[index], len, tbs_cert_info);
         }
     }
     return result;

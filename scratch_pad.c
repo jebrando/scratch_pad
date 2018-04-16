@@ -7,6 +7,8 @@
 #include "azure_c_shared_utility/base64.h"
 #include "azure_c_shared_utility/buffer_.h"
 
+// Reference https://msdn.microsoft.com/en-us/library/windows/desktop/bb540796(v=vs.85).aspx
+
 #define ASN1_MARKER         0x30
 #define LENGTH_EXTENTION    0x82
 #define ASN1_INDEX_         0xA0 // ??? is this A1, A2, A3
@@ -26,8 +28,12 @@ typedef enum X509_ASN1_STATE_TAG
 
 typedef enum ASN1_TYPE_TAG
 {
+    ASN1_BOOLEAN = 0x1,
     ASN1_INTEGER = 0x2,
-    ASN1_CHAR_ARRAY
+    ASN1_BIT_STRING = 0X3,
+    ASN1_NULL = 0X5,
+    ASN1_OBJECT_ID = 0X6,
+    ASN1_UTF8_STRING = 0XC
 } ASN1_TYPE;
 
 typedef struct TBS_CERT_INFO_TAG
@@ -286,7 +292,6 @@ static int parse_certificate(const char* filename)
 int main(void)
 {
     int result;
-    TBS_CERT_INFO tbs_cert_info;
     result = parse_certificate(TARGET_CERT);
     return result;
 }

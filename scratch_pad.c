@@ -58,7 +58,7 @@ typedef struct ASN1_OBJECT_TAG
 } ASN1_OBJECT;
 
 #ifdef WIN32
-    static const char* TARGET_CERT = "C:\\Enlistment\\scratch_pad\\cert\\rsa_cert.pem";
+    static const char* TARGET_CERT = "G:\\Enlistment\\scratch_pad\\cert\\rsa_cert.pem";
     //static const char* BINARY_DATA = "./cert/rsa_cert.bin";
 #else
 static const char* TARGET_CERT = "./cert/rsa_cert.pem";

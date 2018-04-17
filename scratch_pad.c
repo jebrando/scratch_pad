@@ -30,16 +30,25 @@ typedef enum ASN1_TYPE_TAG
 {
     ASN1_BOOLEAN = 0x1,
     ASN1_INTEGER = 0x2,
-    ASN1_BIT_STRING = 0X3,
-    ASN1_NULL = 0X5,
-    ASN1_OBJECT_ID = 0X6,
-    ASN1_UTF8_STRING = 0XC
+    ASN1_BIT_STRING = 0x3,
+    ASN1_OCTET_STRING = 0x4,
+    ASN1_NULL = 0x5,
+    ASN1_OBJECT_ID = 0x6,
+    ASN1_UTF8_STRING = 0xC,
+    //ASN1_SET = 0x11,
+    ASN1_NUMERICAL_STRING = 0x13,
+    ASN1_PRINTABLE_STRING = 0x13,
+    ASN1_T61_STRING = 0x16,
+    ASN1_UTCTIME = 0x17,
+    ASN1_GENERALIZED_STRING = 0x18,
+    ASN1_SEQUENCE = 0x30,
+    ASN1_SET = 0x31
 } ASN1_TYPE;
 
 typedef struct TBS_CERT_INFO_TAG
 {
     uint32_t version;
-    uint32_t serial_num;
+    uint32_t* serial_num;
     int signature;
     char issure_name[256];
     uint32_t validity;
@@ -190,8 +199,9 @@ static size_t calculate_size(unsigned char* buff, size_t* pos_change)
 static int parse_asn1_object(unsigned char* tbs_info, ASN1_OBJECT* asn1_obj)
 {
     int result = 0;
+    size_t idx = 0;
     // determine the type
-    switch (tbs_info[0])
+    switch (tbs_info[idx++])
     {
         case 0x2:
             asn1_obj->type = ASN1_INTEGER;
@@ -202,8 +212,9 @@ static int parse_asn1_object(unsigned char* tbs_info, ASN1_OBJECT* asn1_obj)
     }
     if (result == 0)
     {
-        asn1_obj->length = tbs_info[1];
-        asn1_obj->value = &tbs_info[2];
+        size_t pos_change;
+        asn1_obj->length = calculate_size(&tbs_info[idx], &pos_change);
+        asn1_obj->value = &tbs_info[idx + pos_change];
     }
     return result;
 }
@@ -212,17 +223,25 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
 {
     int result;
     size_t curr_idx = 0;
+
+    unsigned char* iterator;
+
     // Figure out version
     if (tbs_info[curr_idx] == 0xA0)
     {
         curr_idx++;
         if (tbs_info[curr_idx] == 0x3) // Length
         {
-            ASN1_OBJECT ver_obj;
+            ASN1_OBJECT target_obj;
             curr_idx++;
-            parse_asn1_object(&tbs_info[curr_idx], &ver_obj);
+            parse_asn1_object(&tbs_info[curr_idx], &target_obj);
             // Validate version
-            memcpy(tbs_cert_info->version, ver_obj.value, sizeof(uint32_t));
+            memcpy(&tbs_cert_info->version, target_obj.value, sizeof(uint32_t));
+            curr_idx += 0x3;
+
+            // Serial Number
+            parse_asn1_object(&tbs_info[curr_idx], &target_obj);
+            memcpy(&tbs_cert_info->serial_num, target_obj.value, sizeof(uint32_t));
         }
     }
     else

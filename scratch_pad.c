@@ -134,11 +134,11 @@ static const char* CERTIFICATE_PEM =
 "-----END CERTIFICATE-----";
 
 #ifdef WIN32
-    static const char* TARGET_CERT = "G:\\Enlistment\\scratch_pad\\cert\\rsa_cert.pem";
+    //static const char* TARGET_CERT = "G:\\Enlistment\\scratch_pad\\cert\\rsa_cert.pem";
     //static const char* BINARY_DATA = "./cert/rsa_cert.bin";
 #else
-static const char* TARGET_CERT = "./cert/rsa_cert.pem";
-//static const char* BINARY_DATA = "./cert/rsa_cert.bin";
+    //static const char* TARGET_CERT = "./cert/rsa_cert.pem";
+    //static const char* BINARY_DATA = "./cert/rsa_cert.bin";
 #endif
 
 static char* open_certificate(const char* filename)
@@ -197,6 +197,11 @@ static void save_data(const char* filename, const unsigned char* data, size_t le
         }
         fclose(file_ptr);
     }
+}
+
+static int get_object_id_value(ASN1_OBJECT target_obj)
+{
+
 }
 
 static BUFFER_HANDLE decode_cert(char* cert_pem)
@@ -329,6 +334,7 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
                 }
                 break;
             case FIELD_SERIAL_NUM:
+                // OID
                 if (parse_asn1_object(iterator, &target_obj) != 0)
                 {
                     result = __LINE__;
@@ -430,7 +436,7 @@ static int parse_certificate(const char* filename)
 static int parse(const char* cert_pem)
 {
     int result;
-    BUFFER_HANDLE decoded_cert = decode_cert(cert_pem);
+    BUFFER_HANDLE decoded_cert = decode_cert((char*)cert_pem);
     if (decoded_cert == NULL)
     {
         result = __LINE__;

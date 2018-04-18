@@ -45,6 +45,7 @@ extensions             [3] EXPLICIT Extensions OPTIONAL
 
 #define EXTENDED_LEN_FLAG   0x80
 #define LEN_FLAG_COUNT      0x7F
+#define TLV_OVERHEAD_SIZE   0x2
 
 typedef enum X509_ASN1_STATE_TAG
 {
@@ -70,7 +71,8 @@ typedef enum ASN1_TYPE_TAG
     ASN1_UTCTIME = 0x17,
     ASN1_GENERALIZED_STRING = 0x18,
     ASN1_SEQUENCE = 0x30,
-    ASN1_SET = 0x31
+    ASN1_SET = 0x31,
+    ASN1_INVALID
 } ASN1_TYPE;
 
 typedef enum TBS_CERTIFICATE_FIELD_TAG
@@ -93,7 +95,8 @@ typedef struct TBS_CERT_INFO_TAG
     uint32_t* serial_num;
     int signature;
     char issure_name[256];
-    uint32_t validity;
+    time_t not_before;
+    time_t not_after;
     char subject;
     //subjectPublicKeyInfo spki;
     unsigned char issuerUniqueId[1]; // Optional
@@ -199,15 +202,35 @@ static void save_data(const char* filename, const unsigned char* data, size_t le
     }
 }
 
-static int get_object_id_value(ASN1_OBJECT target_obj)
+static char* get_object_id_value(ASN1_OBJECT target_obj)
 {
-
+    // TODO: need to implement
+    return NULL;
 }
 
 static BUFFER_HANDLE decode_cert(char* cert_pem)
 {
-    // Go through the cert and remove the begin and end tags
-    size_t length = strlen(cert_pem);
+    // Go through the cert header and remove the ----- XXXX -----
+    const char* begin_header = cert_pem;
+    while (begin_header != NULL && *begin_header != '\n')
+    {
+        begin_header++;
+    }
+    begin_header++;
+
+    char* end_header = (char*)begin_header;
+    // Loop through till we find a \n followed by -
+    while (*end_header != '\0' && end_header+1 != NULL)
+    {
+        if (*end_header == '\n' && *(end_header+1) == '-')
+        {
+            *end_header = '\0';
+            break;
+        }
+        end_header++;
+    }
+
+    /*size_t length = strlen(cert_pem);
     int delimit_count = 0;
     for (size_t index = length-1; index > 0; index--)
     {
@@ -224,16 +247,10 @@ static BUFFER_HANDLE decode_cert(char* cert_pem)
             }
             delimit_count++;
         }
-    }
+    }*/
+    BUFFER_HANDLE result = Base64_Decoder(begin_header);
 
-    const char* decode_val = cert_pem;
-    while (decode_val != NULL && *decode_val != '\n')
-    {
-        decode_val++;
-    }
-    decode_val++;
-
-    return Base64_Decoder(decode_val);
+    return result;
 }
 
 static size_t calculate_size(unsigned char* buff, size_t* pos_change)
@@ -268,60 +285,47 @@ static size_t calculate_size(unsigned char* buff, size_t* pos_change)
     return result;
 }
 
-static int parse_asn1_object(unsigned char* tbs_info, ASN1_OBJECT* asn1_obj)
+static void parse_asn1_object(unsigned char* tbs_info, ASN1_OBJECT* asn1_obj)
 {
-    int result = 0;
     size_t idx = 0;
+    size_t pos_change;
     // determine the type
-    switch (tbs_info[idx++])
-    {
-        case 0x2:
-            asn1_obj->type = ASN1_INTEGER;
-            break;
-        default:
-            result = __LINE__;
-            break;
-    }
-    if (result == 0)
-    {
-        size_t pos_change;
-        asn1_obj->length = calculate_size(&tbs_info[idx], &pos_change);
-        asn1_obj->value = &tbs_info[idx + pos_change];
-    }
-    return result;
+    asn1_obj->type = tbs_info[idx++];
+    asn1_obj->length = calculate_size(&tbs_info[idx], &pos_change);
+    asn1_obj->value = &tbs_info[idx + pos_change];
 }
 
 static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INFO* tbs_cert_info)
 {
     int result = 0;
+    int continue_loop = 0;
     size_t curr_idx = 0;
 
     TBS_CERTIFICATE_FIELD tbs_field = FIELD_VERSION;
     unsigned char* iterator = tbs_info;
     ASN1_OBJECT target_obj;
 
-    while ((iterator < tbs_info+len) && (result == 0))
+    while ((iterator < tbs_info+len) && (result == 0) && (continue_loop == 0) )
     {
         switch (tbs_field)
         {
             case FIELD_VERSION:
                 // Version field
-                if (*iterator == 0xA0)
+                if (*iterator == 0xA0) // Array type
                 {
                     iterator++;
-                    if (*iterator == 0x03)
+                    if (*iterator == 0x03) // Length of this array
                     {
                         iterator++;
-                        if (parse_asn1_object(iterator, &target_obj) != 0)
-                        {
-                            result = __LINE__;
-                        }
-                        else
-                        {
-                            // Validate version
-                            memcpy(&tbs_cert_info->version, target_obj.value, sizeof(uint32_t));
-                            iterator += target_obj.length;
-                        }
+                        parse_asn1_object(iterator, &target_obj);
+                        // Validate version
+                        uint32_t temp;
+                        memcpy(&temp, target_obj.value, sizeof(uint32_t));
+                        (void)temp;
+
+                        tbs_cert_info->version = target_obj.value[0];
+                        iterator += 3;  // Increment past the array type
+                        tbs_field = FIELD_SERIAL_NUM;
                     }
                     else
                     {
@@ -335,19 +339,26 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
                 break;
             case FIELD_SERIAL_NUM:
                 // OID
-                if (parse_asn1_object(iterator, &target_obj) != 0)
-                {
-                    result = __LINE__;
-                }
-                else
-                {
-                    //memcpy(&tbs_cert_info->serial_num, target_obj.value, sizeof(uint32_t));
-                    iterator += target_obj.length;
-                }
+                parse_asn1_object(iterator, &target_obj);
+                get_object_id_value(target_obj);
+                iterator += target_obj.length + TLV_OVERHEAD_SIZE; // Increment lenght plus type and length
+                tbs_field = FIELD_SIGNATURE;
                 break;
             case FIELD_SIGNATURE:
+                parse_asn1_object(iterator, &target_obj);
+                iterator += target_obj.length + TLV_OVERHEAD_SIZE;
+                tbs_field = FIELD_ISSUER;   // Go to the next field
+                break;
             case FIELD_ISSUER:
+                parse_asn1_object(iterator, &target_obj);
+                iterator += target_obj.length + TLV_OVERHEAD_SIZE;
+                tbs_field = FIELD_VALIDITY;   // Go to the next field
             case FIELD_VALIDITY:
+                parse_asn1_object(iterator, &target_obj);
+                iterator += target_obj.length + TLV_OVERHEAD_SIZE;
+                tbs_field = FIELD_SUBJECT;   // Go to the next field
+                continue_loop = 1;
+                break;
             case FIELD_SUBJECT:
             case FIELD_SUBJECT_PUBLIC_KEY_INFO:
             case FIELD_ISSUER_UNIQUE_ID:
@@ -355,23 +366,6 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
             case FIELD_EXTENSIONS:
                 break;
         }
-    }
-
-    // Figure out version
-    if (tbs_info[curr_idx] == 0xA0)
-    {
-        curr_idx++;
-        if (tbs_info[curr_idx] == 0x3) // Length
-        {
-
-            // Serial Number
-            parse_asn1_object(&tbs_info[curr_idx], &target_obj);
-            memcpy(&tbs_cert_info->serial_num, target_obj.value, sizeof(uint32_t));
-        }
-    }
-    else
-    {
-        result = __LINE__;
     }
     return result;
 }

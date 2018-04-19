@@ -191,6 +191,62 @@ static char* get_object_id_value(ASN1_OBJECT target_obj)
     return NULL;
 }
 
+static time_t get_utctime_value(const unsigned char* time_value)
+{
+    char temp_value[TEMP_DATE_LENGTH];
+    size_t temp_idx = 0;
+    struct tm target_time;
+    uint32_t numeric_val;
+    memset(&target_time, 0, sizeof(target_time));
+    memset(temp_value, 0, TEMP_DATE_LENGTH);
+
+    for (size_t index = 0; index < 12; index++)
+    {
+        temp_value[temp_idx++] = time_value[index];
+
+        switch (index)
+        {
+            case 1:
+                numeric_val = atol(temp_value)+100;
+                target_time.tm_year = numeric_val;
+                memset(temp_value, 0, TEMP_DATE_LENGTH);
+                temp_idx = 0;
+                break;
+            case 3:
+                numeric_val = atol(temp_value);
+                target_time.tm_mon = numeric_val-1;
+                memset(temp_value, 0, TEMP_DATE_LENGTH);
+                temp_idx = 0;
+                break;
+            case 5:
+                numeric_val = atol(temp_value);
+                target_time.tm_mday = numeric_val;
+                memset(temp_value, 0, TEMP_DATE_LENGTH);
+                temp_idx = 0;
+                break;
+            case 7:
+                numeric_val = atol(temp_value);
+                target_time.tm_hour = numeric_val;
+                memset(temp_value, 0, TEMP_DATE_LENGTH);
+                temp_idx = 0;
+                break;
+            case 9:
+                numeric_val = atol(temp_value);
+                target_time.tm_min = numeric_val;
+                memset(temp_value, 0, TEMP_DATE_LENGTH);
+                temp_idx = 0;
+                break;
+            case 11:
+                numeric_val = atol(temp_value);
+                target_time.tm_sec = numeric_val;
+                memset(temp_value, 0, TEMP_DATE_LENGTH);
+                temp_idx = 0;
+                break;
+        }
+    }
+    return mktime(&target_time);
+}
+
 static BUFFER_HANDLE decode_cert(char* cert_pem)
 {
     // Go through the cert header and remove the ----- XXXX -----
@@ -284,7 +340,6 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
 {
     int result = 0;
     int continue_loop = 0;
-    size_t curr_idx = 0;
 
     TBS_CERTIFICATE_FIELD tbs_field = FIELD_VERSION;
     unsigned char* iterator = tbs_info;
@@ -350,7 +405,7 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
                     iterator += target_obj.length + TLV_OVERHEAD_SIZE;
                     // Convert 
 
-                    target_obj.value;
+                    //target_obj.value;
                     tbs_field = FIELD_SUBJECT;   // Go to the next field
                     continue_loop = 1;
                 }
@@ -450,59 +505,9 @@ int main(void)
 {
     //
     unsigned char time_value[] = { 0x31, 0x38, 0x30, 0x34, 0x31, 0x34, 0x30, 0x35, 0x34, 0x35, 0x32, 0x32, 0x5A };
-    char temp_value[TEMP_DATE_LENGTH];
-    memset(temp_value, 0, TEMP_DATE_LENGTH);
-    size_t temp_idx = 0;
-    struct tm target_time;
-    uint32_t numeric_val;
-    memset(&target_time, 0, sizeof(target_time));
-
-    for (size_t index = 0; index < 12; index++)
-    {
-        temp_value[temp_idx++] = time_value[index];
-
-        switch (index)
-        {
-            case 1:
-                numeric_val = atol(temp_value)*100;
-                target_time.tm_year = numeric_val;
-                memset(temp_value, 0, TEMP_DATE_LENGTH);
-                temp_idx = 0;
-                break;
-            case 3:
-                numeric_val = atol(temp_value);
-                target_time.tm_mon = numeric_val-1;
-                memset(temp_value, 0, TEMP_DATE_LENGTH);
-                temp_idx = 0;
-                break;
-            case 5:
-                numeric_val = atol(temp_value);
-                target_time.tm_mday = numeric_val;
-                memset(temp_value, 0, TEMP_DATE_LENGTH);
-                temp_idx = 0;
-                break;
-            case 7:
-                numeric_val = atol(temp_value);
-                target_time.tm_hour = numeric_val;
-                memset(temp_value, 0, TEMP_DATE_LENGTH);
-                temp_idx = 0;
-                break;
-            case 9:
-                numeric_val = atol(temp_value);
-                target_time.tm_min = numeric_val;
-                memset(temp_value, 0, TEMP_DATE_LENGTH);
-                temp_idx = 0;
-                break;
-            case 11:
-                numeric_val = atol(temp_value);
-                target_time.tm_sec = numeric_val;
-                memset(temp_value, 0, TEMP_DATE_LENGTH);
-                temp_idx = 0;
-                break;
-        }
-    }
-    time_t target = mktime(&target_time);
-
+    time_t val = get_utctime_value(time_value);
+    (void)val;
+    
     int result;
     //result = parse_certificate(TARGET_CERT);
     result = parse(CERTIFICATE_PEM);

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <time.h>
 
 #include "azure_c_shared_utility/base64.h"
 #include "azure_c_shared_utility/buffer_.h"
@@ -46,6 +47,8 @@ extensions             [3] EXPLICIT Extensions OPTIONAL
 #define EXTENDED_LEN_FLAG   0x80
 #define LEN_FLAG_COUNT      0x7F
 #define TLV_OVERHEAD_SIZE   0x2
+#define LENGTH_OF_VALIDITY  0xE1
+#define TEMP_DATE_LENGTH    32
 
 typedef enum X509_ASN1_STATE_TAG
 {
@@ -113,27 +116,7 @@ typedef struct ASN1_OBJECT_TAG
 
 static const char* CERTIFICATE_PEM =
 "-----BEGIN CERTIFICATE-----""\n"
-"MIID1zCCAr+gAwIBAgIJALcEbK7ClhupMA0GCSqGSIb3DQEBCwUAMIGBMQswCQYD""\n"
-"VQQGEwJVUzELMAkGA1UECAwCV0ExFDASBgNVBAcMC1dvb2RpbnZpbGxlMRIwEAYD""\n"
-"VQQKDAlNaWNyb3NvZnQxDjAMBgNVBAsMBUF6dXJlMREwDwYDVQQDDAhqZWJyYW5k""\n"
-"bzEYMBYGCSqGSIb3DQEJARYJamJAbXMuY29tMB4XDTE4MDQxNDA1NDUyMloXDTE4""\n"
-"MDQyNDA1NDUyMlowgYExCzAJBgNVBAYTAlVTMQswCQYDVQQIDAJXQTEUMBIGA1UE""\n"
-"BwwLV29vZGludmlsbGUxEjAQBgNVBAoMCU1pY3Jvc29mdDEOMAwGA1UECwwFQXp1""\n"
-"cmUxETAPBgNVBAMMCGplYnJhbmRvMRgwFgYJKoZIhvcNAQkBFglqYkBtcy5jb20w""\n"
-"ggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCmHPz2KVQtDP0PfRv76suF""\n"
-"R821mluRcTnvAqN5weU9LGL91J+0QQRw6faEexU0C86Ozo/P4KULCfrShRAeGvzJ""\n"
-"zyUZWau1wc4+oTkQfAIzOz4KOZpBf2imISfOysw0I3Exm9TNRVAmvapjY2mscRrU""\n"
-"hE8H97jUnaGf0kxfW9VRdoT9CVPmjmK3P3SknChHFdcv9nSEJ98bNtklBH9JCCft""\n"
-"/RcO+4zktD96khQ3srC78Cz8nNjZquK1OwK9p3x+BrukekgW+wAXhjvONNLgF2rb""\n"
-"bCQCDYyZhUu6WAjM4II23/uA5Gie1xYQkRN0i779aA5FcS05fCBqNIyrCWtSqsG1""\n"
-"AgMBAAGjUDBOMB0GA1UdDgQWBBSlTWvqdhHR818KM1PPJncyZYj5qjAfBgNVHSME""\n"
-"GDAWgBSlTWvqdhHR818KM1PPJncyZYj5qjAMBgNVHRMEBTADAQH/MA0GCSqGSIb3""\n"
-"DQEBCwUAA4IBAQCHjZaY9i/E33HUyV7RllZ5fFeUdrbmXK6xJE6xmvaWfnTRBVOH""\n"
-"IMwhjxGRgINm0fqRzzugJrVK2zSoh1rbpTr4zYimB4qaShCYh3jRYS7IukrVfzy0""\n"
-"dw/FdQOQ5q/4F3HqfK9wuk/6g3goUfAiVjuytucmUccO1K8iO2KI5jj3obEZyvvE""\n"
-"dUr0c3yD8C7G/659v+fz07Kjoir4P1ZO2r3xj/G6yqtIYpPG1Z2RSkC5SrxeIQvf""\n"
-"RUbvJuT7nkvUk2bxMlWli/x8rVFuJl7eR5T7MyfgUyLhjrzer1Vex7tVsn8aCKeO""\n"
-"9Bb5qBd3DVQWpT20+NQSYVKblkSqrwxBteQZ""\n"
+"MIID1zCCAr+gAwIBAgIJALcEbK7ClhupMA0GCSqGSIb3DQEBCwUAMIGBMQswCQYDVQQGEwJVUzELMAkGA1UECAwCV0ExFDASBgNVBAcMC1dvb2RpbnZpbGxlMRIwEAYDVQQKDAlNaWNyb3NvZnQxDjAMBgNVBAsMBUF6dXJlMREwDwYDVQQDDAhqZWJyYW5kbzEYMBYGCSqGSIb3DQEJARYJamJAbXMuY29tMB4XDTE4MDQxNDA1NDUyMloXDTE4MDQyNDA1NDUyMlowgYExCzAJBgNVBAYTAlVTMQswCQYDVQQIDAJXQTEUMBIGA1UEBwwLV29vZGludmlsbGUxEjAQBgNVBAoMCU1pY3Jvc29mdDEOMAwGA1UECwwFQXp1cmUxETAPBgNVBAMMCGplYnJhbmRvMRgwFgYJKoZIhvcNAQkBFglqYkBtcy5jb20wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCmHPz2KVQtDP0PfRv76suFR821mluRcTnvAqN5weU9LGL91J+0QQRw6faEexU0C86Ozo/P4KULCfrShRAeGvzJzyUZWau1wc4+oTkQfAIzOz4KOZpBf2imISfOysw0I3Exm9TNRVAmvapjY2mscRrUhE8H97jUnaGf0kxfW9VRdoT9CVPmjmK3P3SknChHFdcv9nSEJ98bNtklBH9JCCft/RcO+4zktD96khQ3srC78Cz8nNjZquK1OwK9p3x+BrukekgW+wAXhjvONNLgF2rbbCQCDYyZhUu6WAjM4II23/uA5Gie1xYQkRN0i779aA5FcS05fCBqNIyrCWtSqsG1AgMBAAGjUDBOMB0GA1UdDgQWBBSlTWvqdhHR818KM1PPJncyZYj5qjAfBgNVHSMEGDAWgBSlTWvqdhHR818KM1PPJncyZYj5qjAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQCHjZaY9i/E33HUyV7RllZ5fFeUdrbmXK6xJE6xmvaWfnTRBVOHIMwhjxGRgINm0fqRzzugJrVK2zSoh1rbpTr4zYimB4qaShCYh3jRYS7IukrVfzy0dw/FdQOQ5q/4F3HqfK9wuk/6g3goUfAiVjuytucmUccO1K8iO2KI5jj3obEZyvvEdUr0c3yD8C7G/659v+fz07Kjoir4P1ZO2r3xj/G6yqtIYpPG1Z2RSkC5SrxeIQvfRUbvJuT7nkvUk2bxMlWli/x8rVFuJl7eR5T7MyfgUyLhjrzer1Vex7tVsn8aCKeO9Bb5qBd3DVQWpT20+NQSYVKblkSqrwxBteQZ""\n"
 "-----END CERTIFICATE-----";
 
 #ifdef WIN32
@@ -217,6 +200,8 @@ static BUFFER_HANDLE decode_cert(char* cert_pem)
         begin_header++;
     }
     begin_header++;
+
+    // Todo: Remove \n in the file if found
 
     char* end_header = (char*)begin_header;
     // Loop through till we find a \n followed by -
@@ -353,11 +338,22 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
                 parse_asn1_object(iterator, &target_obj);
                 iterator += target_obj.length + TLV_OVERHEAD_SIZE;
                 tbs_field = FIELD_VALIDITY;   // Go to the next field
+                break;
             case FIELD_VALIDITY:
                 parse_asn1_object(iterator, &target_obj);
-                iterator += target_obj.length + TLV_OVERHEAD_SIZE;
-                tbs_field = FIELD_SUBJECT;   // Go to the next field
-                continue_loop = 1;
+                if (target_obj.length != LENGTH_OF_VALIDITY)
+                {
+                    result = __LINE__;
+                }
+                else
+                {
+                    iterator += target_obj.length + TLV_OVERHEAD_SIZE;
+                    // Convert 
+
+                    target_obj.value;
+                    tbs_field = FIELD_SUBJECT;   // Go to the next field
+                    continue_loop = 1;
+                }
                 break;
             case FIELD_SUBJECT:
             case FIELD_SUBJECT_PUBLIC_KEY_INFO:
@@ -452,6 +448,61 @@ static int parse(const char* cert_pem)
 
 int main(void)
 {
+    //
+    unsigned char time_value[] = { 0x31, 0x38, 0x30, 0x34, 0x31, 0x34, 0x30, 0x35, 0x34, 0x35, 0x32, 0x32, 0x5A };
+    char temp_value[TEMP_DATE_LENGTH];
+    memset(temp_value, 0, TEMP_DATE_LENGTH);
+    size_t temp_idx = 0;
+    struct tm target_time;
+    uint32_t numeric_val;
+    memset(&target_time, 0, sizeof(target_time));
+
+    for (size_t index = 0; index < 12; index++)
+    {
+        temp_value[temp_idx++] = time_value[index];
+
+        switch (index)
+        {
+            case 1:
+                numeric_val = atol(temp_value)*100;
+                target_time.tm_year = numeric_val;
+                memset(temp_value, 0, TEMP_DATE_LENGTH);
+                temp_idx = 0;
+                break;
+            case 3:
+                numeric_val = atol(temp_value);
+                target_time.tm_mon = numeric_val-1;
+                memset(temp_value, 0, TEMP_DATE_LENGTH);
+                temp_idx = 0;
+                break;
+            case 5:
+                numeric_val = atol(temp_value);
+                target_time.tm_mday = numeric_val;
+                memset(temp_value, 0, TEMP_DATE_LENGTH);
+                temp_idx = 0;
+                break;
+            case 7:
+                numeric_val = atol(temp_value);
+                target_time.tm_hour = numeric_val;
+                memset(temp_value, 0, TEMP_DATE_LENGTH);
+                temp_idx = 0;
+                break;
+            case 9:
+                numeric_val = atol(temp_value);
+                target_time.tm_min = numeric_val;
+                memset(temp_value, 0, TEMP_DATE_LENGTH);
+                temp_idx = 0;
+                break;
+            case 11:
+                numeric_val = atol(temp_value);
+                target_time.tm_sec = numeric_val;
+                memset(temp_value, 0, TEMP_DATE_LENGTH);
+                temp_idx = 0;
+                break;
+        }
+    }
+    time_t target = mktime(&target_time);
+
     int result;
     //result = parse_certificate(TARGET_CERT);
     result = parse(CERTIFICATE_PEM);

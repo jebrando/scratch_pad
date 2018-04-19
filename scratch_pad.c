@@ -7,6 +7,7 @@
 
 #include "azure_c_shared_utility/base64.h"
 #include "azure_c_shared_utility/buffer_.h"
+#include "azure_c_shared_utility/xlogging.h"
 
 // Reference https://msdn.microsoft.com/en-us/library/windows/desktop/bb540796(v=vs.85).aspx
 /*
@@ -49,6 +50,7 @@ extensions             [3] EXPLICIT Extensions OPTIONAL
 #define TLV_OVERHEAD_SIZE   0x2
 #define LENGTH_OF_VALIDITY  0xE1
 #define TEMP_DATE_LENGTH    32
+#define NOT_AFTER_OFFSET    15
 
 typedef enum X509_ASN1_STATE_TAG
 {
@@ -100,11 +102,7 @@ typedef struct TBS_CERT_INFO_TAG
     char issure_name[256];
     time_t not_before;
     time_t not_after;
-    char subject;
-    //subjectPublicKeyInfo spki;
-    unsigned char issuerUniqueId[1]; // Optional
-    //subjectUniqueID[2];
-    //extensions[3];
+    char* subject;
 } TBS_CERT_INFO;
 
 typedef struct ASN1_OBJECT_TAG
@@ -249,48 +247,42 @@ static time_t get_utctime_value(const unsigned char* time_value)
 
 static BUFFER_HANDLE decode_cert(char* cert_pem)
 {
-    // Go through the cert header and remove the ----- XXXX -----
+    BUFFER_HANDLE result;
+    char placeholder = '\0';
     const char* begin_header = cert_pem;
-    while (begin_header != NULL && *begin_header != '\n')
-    {
-        begin_header++;
-    }
-    begin_header++;
+    char* end_header;
 
-    // Todo: Remove \n in the file if found
-
-    char* end_header = (char*)begin_header;
-    // Loop through till we find a \n followed by -
-    while (*end_header != '\0' && end_header+1 != NULL)
+    if (*begin_header == '-')
     {
-        if (*end_header == '\n' && *(end_header+1) == '-')
+        // Go through the cert header and remove the ----- XXXX -----
+        while (begin_header != NULL && *begin_header != '\n')
         {
-            *end_header = '\0';
-            break;
+            begin_header++;
         }
-        end_header++;
-    }
+        begin_header++;
 
-    /*size_t length = strlen(cert_pem);
-    int delimit_count = 0;
-    for (size_t index = length-1; index > 0; index--)
-    {
-        if (cert_pem[index] != '-' && cert_pem[index] != '\n' && cert_pem[index] != '\r')
+        // Todo: Remove \n in the file if found
+
+        end_header = (char*)begin_header;
+        // Loop through till we find a \n followed by -
+        while (*end_header != '\0' && end_header + 1 != NULL)
         {
-            if (delimit_count == 0)
+            if (*end_header == '\n' && *(end_header + 1) == '-')
             {
-                do {} while (cert_pem[index--] != '-');
-            }
-            else
-            {
-                cert_pem[index+1] = '\0';
+                placeholder = *end_header;
+                *end_header = '\0';
                 break;
             }
-            delimit_count++;
+            end_header++;
         }
-    }*/
-    BUFFER_HANDLE result = Base64_Decoder(begin_header);
+    }
+    result = Base64_Decoder(begin_header);
 
+    // Put the cert back the way we found it
+    if (placeholder != '\0')
+    {
+        *end_header = placeholder;
+    }
     return result;
 }
 
@@ -402,15 +394,16 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
                 }
                 else
                 {
-                    iterator += target_obj.length + TLV_OVERHEAD_SIZE;
                     // Convert 
-
-                    //target_obj.value;
+                    tbs_cert_info->not_before = get_utctime_value(target_obj.value);
+                    tbs_cert_info->not_after = get_utctime_value(target_obj.value + NOT_AFTER_OFFSET);
+                    iterator += target_obj.length + TLV_OVERHEAD_SIZE;
                     tbs_field = FIELD_SUBJECT;   // Go to the next field
                     continue_loop = 1;
                 }
                 break;
             case FIELD_SUBJECT:
+                break;
             case FIELD_SUBJECT_PUBLIC_KEY_INFO:
             case FIELD_ISSUER_UNIQUE_ID:
             case FIELD_SUBJECT_UNIQUE_ID:
@@ -484,6 +477,7 @@ static int parse(const char* cert_pem)
     BUFFER_HANDLE decoded_cert = decode_cert((char*)cert_pem);
     if (decoded_cert == NULL)
     {
+        LogError("Failure decoding certificate");
         result = __LINE__;
     }
     else

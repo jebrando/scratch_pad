@@ -117,6 +117,10 @@ static const char* CERTIFICATE_PEM =
 "-----BEGIN CERTIFICATE-----""\n"
 "MIID1zCCAr+gAwIBAgIJALcEbK7ClhupMA0GCSqGSIb3DQEBCwUAMIGBMQswCQYDVQQGEwJVUzELMAkGA1UECAwCV0ExFDASBgNVBAcMC1dvb2RpbnZpbGxlMRIwEAYDVQQKDAlNaWNyb3NvZnQxDjAMBgNVBAsMBUF6dXJlMREwDwYDVQQDDAhqZWJyYW5kbzEYMBYGCSqGSIb3DQEJARYJamJAbXMuY29tMB4XDTE4MDQxNDA1NDUyMloXDTE4MDQyNDA1NDUyMlowgYExCzAJBgNVBAYTAlVTMQswCQYDVQQIDAJXQTEUMBIGA1UEBwwLV29vZGludmlsbGUxEjAQBgNVBAoMCU1pY3Jvc29mdDEOMAwGA1UECwwFQXp1cmUxETAPBgNVBAMMCGplYnJhbmRvMRgwFgYJKoZIhvcNAQkBFglqYkBtcy5jb20wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCmHPz2KVQtDP0PfRv76suFR821mluRcTnvAqN5weU9LGL91J+0QQRw6faEexU0C86Ozo/P4KULCfrShRAeGvzJzyUZWau1wc4+oTkQfAIzOz4KOZpBf2imISfOysw0I3Exm9TNRVAmvapjY2mscRrUhE8H97jUnaGf0kxfW9VRdoT9CVPmjmK3P3SknChHFdcv9nSEJ98bNtklBH9JCCft/RcO+4zktD96khQ3srC78Cz8nNjZquK1OwK9p3x+BrukekgW+wAXhjvONNLgF2rbbCQCDYyZhUu6WAjM4II23/uA5Gie1xYQkRN0i779aA5FcS05fCBqNIyrCWtSqsG1AgMBAAGjUDBOMB0GA1UdDgQWBBSlTWvqdhHR818KM1PPJncyZYj5qjAfBgNVHSMEGDAWgBSlTWvqdhHR818KM1PPJncyZYj5qjAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQCHjZaY9i/E33HUyV7RllZ5fFeUdrbmXK6xJE6xmvaWfnTRBVOHIMwhjxGRgINm0fqRzzugJrVK2zSoh1rbpTr4zYimB4qaShCYh3jRYS7IukrVfzy0dw/FdQOQ5q/4F3HqfK9wuk/6g3goUfAiVjuytucmUccO1K8iO2KI5jj3obEZyvvEdUr0c3yD8C7G/659v+fz07Kjoir4P1ZO2r3xj/G6yqtIYpPG1Z2RSkC5SrxeIQvfRUbvJuT7nkvUk2bxMlWli/x8rVFuJl7eR5T7MyfgUyLhjrzer1Vex7tVsn8aCKeO9Bb5qBd3DVQWpT20+NQSYVKblkSqrwxBteQZ""\n"
 "-----END CERTIFICATE-----";
+static const char* CERT_2_PEM = 
+"-----BEGIN CERTIFICATE-----""\n"
+"MIIBfTCCASSgAwIBAgIFGis8TV4wCgYIKoZIzj0EAwIwNDESMBAGA1UEAwwJcmlvdC1yb290MQswCQYDVQQGDAJVUzERMA8GA1UECgwITVNSX1RFU1QwHhcNMTcwMTAxMDAwMDAwWhcNMzcwMTAxMDAwMDAwWjA0MRIwEAYDVQQDDAlyaW90LXJvb3QxCzAJBgNVBAYMAlVTMREwDwYDVQQKDAhNU1JfVEVTVDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABGmrWiahUg/J7F2llfSXSLn+0j0JxZ0fp1DTlEnI/Jzr3x5bsP2eRppj0jflBPvU+qJwT7EFnq2a1Tz4OWKxzn2jIzAhMAsGA1UdDwQEAwIABDASBgNVHRMBAf8ECDAGAQH/AgEBMAoGCCqGSM49BAMCA0cAMEQCIFFcPW6545a5BNP+yn9U/c0MwemXvzddylFa0KbDtANfAiB0rxBRLP1e7vZtzjJsLP6njjO6qWoArXRuTV2nDO3S9g==""\n"
+"-----END CERTIFICATE-----";
 
 #ifdef WIN32
     //static const char* TARGET_CERT = "G:\\Enlistment\\scratch_pad\\cert\\rsa_cert.pem";
@@ -430,6 +434,7 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
                 size_len = parse_asn1_object(iterator, &target_obj);
                 iterator += target_obj.length + TLV_OVERHEAD_SIZE + (size_len - 1); // adding len on issue due to the size being 
                 tbs_field = FIELD_VALIDITY;   // Go to the next field
+                continue_loop = 1;
                 break;
             case FIELD_SUBJECT_PUBLIC_KEY_INFO:
             case FIELD_ISSUER_UNIQUE_ID:
@@ -526,12 +531,6 @@ static int parse(const char* cert_pem)
 
 int main(void)
 {
-    //
-    /*unsigned char time_value[] = { 0x17, 0x0d, 0x31, 0x38, 0x30, 0x34, 0x31, 0x34, 0x30, 0x35, 0x34, 0x35, 0x32, 0x32, 0x5A };
-    time_t val = get_utctime_value(time_value);
-    
-    printf("The current local time is: %s", ctime(&val));*/
-
     int result;
     //result = parse_certificate(TARGET_CERT);
     result = parse(CERTIFICATE_PEM);

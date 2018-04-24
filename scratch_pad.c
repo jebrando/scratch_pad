@@ -48,9 +48,10 @@ extensions             [3] EXPLICIT Extensions OPTIONAL
 #define EXTENDED_LEN_FLAG   0x80
 #define LEN_FLAG_COUNT      0x7F
 #define TLV_OVERHEAD_SIZE   0x2
-#define LENGTH_OF_VALIDITY  0xE1
+#define LENGTH_OF_VALIDITY  0x1E
 #define TEMP_DATE_LENGTH    32
 #define NOT_AFTER_OFFSET    15
+#define TIME_FIELD_LENGTH   0x0D
 
 typedef enum X509_ASN1_STATE_TAG
 {
@@ -191,6 +192,7 @@ static char* get_object_id_value(ASN1_OBJECT target_obj)
 
 static time_t get_utctime_value(const unsigned char* time_value)
 {
+    time_t result;
     char temp_value[TEMP_DATE_LENGTH];
     size_t temp_idx = 0;
     struct tm target_time;
@@ -198,51 +200,60 @@ static time_t get_utctime_value(const unsigned char* time_value)
     memset(&target_time, 0, sizeof(target_time));
     memset(temp_value, 0, TEMP_DATE_LENGTH);
 
-    for (size_t index = 0; index < 12; index++)
+    // Check the the type and the lenght
+    if (*time_value != ASN1_UTCTIME || *(time_value+1) != TIME_FIELD_LENGTH)
     {
-        temp_value[temp_idx++] = time_value[index];
-
-        switch (index)
-        {
-            case 1:
-                numeric_val = atol(temp_value)+100;
-                target_time.tm_year = numeric_val;
-                memset(temp_value, 0, TEMP_DATE_LENGTH);
-                temp_idx = 0;
-                break;
-            case 3:
-                numeric_val = atol(temp_value);
-                target_time.tm_mon = numeric_val-1;
-                memset(temp_value, 0, TEMP_DATE_LENGTH);
-                temp_idx = 0;
-                break;
-            case 5:
-                numeric_val = atol(temp_value);
-                target_time.tm_mday = numeric_val;
-                memset(temp_value, 0, TEMP_DATE_LENGTH);
-                temp_idx = 0;
-                break;
-            case 7:
-                numeric_val = atol(temp_value);
-                target_time.tm_hour = numeric_val;
-                memset(temp_value, 0, TEMP_DATE_LENGTH);
-                temp_idx = 0;
-                break;
-            case 9:
-                numeric_val = atol(temp_value);
-                target_time.tm_min = numeric_val;
-                memset(temp_value, 0, TEMP_DATE_LENGTH);
-                temp_idx = 0;
-                break;
-            case 11:
-                numeric_val = atol(temp_value);
-                target_time.tm_sec = numeric_val;
-                memset(temp_value, 0, TEMP_DATE_LENGTH);
-                temp_idx = 0;
-                break;
-        }
+        result = 0;
     }
-    return mktime(&target_time);
+    else
+    {
+        // Don't evaluate the Z at the end of the UTC time field
+        for (size_t index = 0; index < TIME_FIELD_LENGTH-1; index++)
+        {
+            temp_value[temp_idx++] = time_value[index+2];
+            switch (index)
+            {
+                case 1:
+                    numeric_val = atol(temp_value) + 100;
+                    target_time.tm_year = numeric_val;
+                    memset(temp_value, 0, TEMP_DATE_LENGTH);
+                    temp_idx = 0;
+                    break;
+                case 3:
+                    numeric_val = atol(temp_value);
+                    target_time.tm_mon = numeric_val - 1;
+                    memset(temp_value, 0, TEMP_DATE_LENGTH);
+                    temp_idx = 0;
+                    break;
+                case 5:
+                    numeric_val = atol(temp_value);
+                    target_time.tm_mday = numeric_val;
+                    memset(temp_value, 0, TEMP_DATE_LENGTH);
+                    temp_idx = 0;
+                    break;
+                case 7:
+                    numeric_val = atol(temp_value);
+                    target_time.tm_hour = numeric_val-1;
+                    memset(temp_value, 0, TEMP_DATE_LENGTH);
+                    temp_idx = 0;
+                    break;
+                case 9:
+                    numeric_val = atol(temp_value);
+                    target_time.tm_min = numeric_val;
+                    memset(temp_value, 0, TEMP_DATE_LENGTH);
+                    temp_idx = 0;
+                    break;
+                case 11:
+                    numeric_val = atol(temp_value);
+                    target_time.tm_sec = numeric_val;
+                    memset(temp_value, 0, TEMP_DATE_LENGTH);
+                    temp_idx = 0;
+                    break;
+            }
+        }
+        result = mktime(&target_time);
+    }
+    return result;
 }
 
 static BUFFER_HANDLE decode_cert(char* cert_pem)
@@ -261,7 +272,7 @@ static BUFFER_HANDLE decode_cert(char* cert_pem)
         }
         begin_header++;
 
-        // Todo: Remove \n in the file if found
+        // Remove \n in the file if found
 
         end_header = (char*)begin_header;
         // Loop through till we find a \n followed by -
@@ -318,7 +329,7 @@ static size_t calculate_size(unsigned char* buff, size_t* pos_change)
     return result;
 }
 
-static void parse_asn1_object(unsigned char* tbs_info, ASN1_OBJECT* asn1_obj)
+static size_t parse_asn1_object(unsigned char* tbs_info, ASN1_OBJECT* asn1_obj)
 {
     size_t idx = 0;
     size_t pos_change;
@@ -326,12 +337,14 @@ static void parse_asn1_object(unsigned char* tbs_info, ASN1_OBJECT* asn1_obj)
     asn1_obj->type = tbs_info[idx++];
     asn1_obj->length = calculate_size(&tbs_info[idx], &pos_change);
     asn1_obj->value = &tbs_info[idx + pos_change];
+    return pos_change;
 }
 
 static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INFO* tbs_cert_info)
 {
     int result = 0;
     int continue_loop = 0;
+    size_t size_len;
 
     TBS_CERTIFICATE_FIELD tbs_field = FIELD_VERSION;
     unsigned char* iterator = tbs_info;
@@ -382,8 +395,8 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
                 tbs_field = FIELD_ISSUER;   // Go to the next field
                 break;
             case FIELD_ISSUER:
-                parse_asn1_object(iterator, &target_obj);
-                iterator += target_obj.length + TLV_OVERHEAD_SIZE;
+                size_len = parse_asn1_object(iterator, &target_obj);
+                iterator += target_obj.length + TLV_OVERHEAD_SIZE + (size_len-1); // adding len on issue due to the size being 
                 tbs_field = FIELD_VALIDITY;   // Go to the next field
                 break;
             case FIELD_VALIDITY:
@@ -395,14 +408,28 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
                 else
                 {
                     // Convert 
-                    tbs_cert_info->not_before = get_utctime_value(target_obj.value);
-                    tbs_cert_info->not_after = get_utctime_value(target_obj.value + NOT_AFTER_OFFSET);
-                    iterator += target_obj.length + TLV_OVERHEAD_SIZE;
-                    tbs_field = FIELD_SUBJECT;   // Go to the next field
-                    continue_loop = 1;
+                    if ((tbs_cert_info->not_before = get_utctime_value(target_obj.value)) == 0)
+                    {
+                        result = __LINE__;
+                    }
+                    else if ((tbs_cert_info->not_after = get_utctime_value(target_obj.value + NOT_AFTER_OFFSET)) == 0)
+                    {
+                        result = __LINE__;
+                    }
+                    else
+                    {
+                        printf("Not before: %s", ctime(&tbs_cert_info->not_before));
+                        printf("Not after: %s", ctime(&tbs_cert_info->not_after));
+                        iterator += target_obj.length + TLV_OVERHEAD_SIZE;
+                        tbs_field = FIELD_SUBJECT;   // Go to the next field
+                        continue_loop = 1;
+                    }
                 }
                 break;
             case FIELD_SUBJECT:
+                size_len = parse_asn1_object(iterator, &target_obj);
+                iterator += target_obj.length + TLV_OVERHEAD_SIZE + (size_len - 1); // adding len on issue due to the size being 
+                tbs_field = FIELD_VALIDITY;   // Go to the next field
                 break;
             case FIELD_SUBJECT_PUBLIC_KEY_INFO:
             case FIELD_ISSUER_UNIQUE_ID:
@@ -431,6 +458,8 @@ static size_t parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STAT
         else if (state == STATE_TBS_CERTIFICATE)
         {
             result = parse_tbs_cert_info(&section[index], len, tbs_cert_info);
+            // Only parsing the TBS area of the certificate
+            break;
         }
     }
     return result;
@@ -498,10 +527,11 @@ static int parse(const char* cert_pem)
 int main(void)
 {
     //
-    unsigned char time_value[] = { 0x31, 0x38, 0x30, 0x34, 0x31, 0x34, 0x30, 0x35, 0x34, 0x35, 0x32, 0x32, 0x5A };
+    /*unsigned char time_value[] = { 0x17, 0x0d, 0x31, 0x38, 0x30, 0x34, 0x31, 0x34, 0x30, 0x35, 0x34, 0x35, 0x32, 0x32, 0x5A };
     time_t val = get_utctime_value(time_value);
-    (void)val;
     
+    printf("The current local time is: %s", ctime(&val));*/
+
     int result;
     //result = parse_certificate(TARGET_CERT);
     result = parse(CERTIFICATE_PEM);

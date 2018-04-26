@@ -135,9 +135,15 @@ static const char* TEST_ECC_CERT =
 "MIIBfTCCASSgAwIBAgIFGis8TV4wCgYIKoZIzj0EAwIwNDESMBAGA1UEAwwJcmlvdC1yb290MQswCQYDVQQGDAJVUzERMA8GA1UECgwITVNSX1RFU1QwHhcNMTcwMTAxMDAwMDAwWhcNMzcwMTAxMDAwMDAwWjA0MRIwEAYDVQQDDAlyaW90LXJvb3QxCzAJBgNVBAYMAlVTMREwDwYDVQQKDAhNU1JfVEVTVDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABGmrWiahUg/J7F2llfSXSLn+0j0JxZ0fp1DTlEnI/Jzr3x5bsP2eRppj0jflBPvU+qJwT7EFnq2a1Tz4OWKxzn2jIzAhMAsGA1UdDwQEAwIABDASBgNVHRMBAf8ECDAGAQH/AgEBMAoGCCqGSM49BAMCA0cAMEQCIFFcPW6545a5BNP+yn9U/c0MwemXvzddylFa0KbDtANfAiB0rxBRLP1e7vZtzjJsLP6njjO6qWoArXRuTV2nDO3S9g==""\n"
 "-----END CERTIFICATE-----";
 
+#ifdef WIN32
 static const char* CERT_AGENT_FILENAME = "G:\\certificates\\Edge\\edge-agent-ca\\edge-agent-ca.cert.pem";
 static const char* CERT_CHAIN_FILENAME = "G:\\certificates\\Edge\\edge-chain-ca\\edge-chain-ca.cert.pem";
 static const char* CERT_SERVER_FILENAME = "G:\\certificates\\Edge\\edge-hub-server\\edge-hub-server.cert.pem";
+#else
+static const char* CERT_AGENT_FILENAME = "/home/jebrando/development/scratch_pad/cert/signer_cert.cer";
+static const char* CERT_CHAIN_FILENAME = "/home/jebrando/development/scratch_pad/cert/FullChain.cer";
+static const char* CERT_SERVER_FILENAME = "G:\\certificates\\Edge\\edge-hub-server\\edge-hub-server.cert.pem";
+#endif
 
 #ifdef WIN32
     //static const char* TARGET_CERT = "G:\\Enlistment\\scratch_pad\\cert\\rsa_cert.pem";
@@ -285,7 +291,7 @@ static time_t get_utctime_value(const unsigned char* time_value)
                 case 7:
                     // Set the hour
                     numeric_val = atol(temp_value);
-                    target_time.tm_hour = numeric_val-1;
+                    target_time.tm_hour = numeric_val;
                     memset(temp_value, 0, TEMP_DATE_LENGTH);
                     temp_idx = 0;
                     break;
@@ -304,6 +310,9 @@ static time_t get_utctime_value(const unsigned char* time_value)
             }
         }
         result = tm_to_utc(&target_time);
+printf("time: %d-%d-%d %d:%02d:%02d\r\n", target_time.tm_year+1900, target_time.tm_mon, target_time.tm_mday,
+    target_time.tm_hour, target_time.tm_min, target_time.tm_sec);
+printf("Not before val: %" PRIu64 "\n", result);
     }
     return result;
 }
@@ -549,15 +558,6 @@ static int parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STATE s
         else if (state == STATE_TBS_CERTIFICATE)
         {
             result = parse_tbs_cert_info(&section[index], len, cert_info);
-
-            int64_t value = cert_info->not_before;
-
-            printf("Not before: %s", ctime(&cert_info->not_before));
-            printf("Not before val: %" PRIu64 "\n", cert_info->not_before);
-            printf("Not after: %s", ctime(&cert_info->not_after));
-            printf("Not after val: %" PRIu64 "\n", cert_info->not_after);
-
-
             // Only parsing the TBS area of the certificate
             break;
         }
@@ -615,46 +615,10 @@ int main(void)
     CERT_INFO cert_info;
     memset(&cert_info, 0, sizeof(CERT_INFO));
     //result = parse_certificate_file(CERT_AGENT_FILENAME, &cert_info);
-    //result = parse_certificate_file(CERT_CHAIN_FILENAME, &cert_info);
+    result = parse_certificate_file(CERT_CHAIN_FILENAME, &cert_info);
 
-    /*time_t now = time(NULL);
-
-    struct tm* utc_tm = gmtime(&now);
-    utc_tm->tm_isdst = 0;
-    time_t utc_time = mktime(utc_tm);
-
-    struct tm* local_tm = localtime(&now);
-    local_tm->tm_isdst = 0;
-    time_t local = mktime(local_tm);
-
-    char buf[30];
-    strftime(buf, sizeof(buf), "%F %T %Z\n", local_tm);
-    printf("%s\n", buf);
-
-
-    int64_t local_time_offset = utc_time - local;
-
-    int64_t found_value = 1484969133;
-
-    int64_t correct_value = found_value - local_time_offset;*/
-
-    // https://www.epochconverter.com/
-
-    time_t now = time(NULL);
-    struct tm* local_time = localtime(&now);
-
-    
-    time_t utc = tm_to_utc(local_time);
-
-
-    //char buf[30];
-    //strftime(buf, sizeof(buf), "%F %T %Z\n", utc_time);
-    //printf("%s\n", buf);
-
-
-
-    cert_info.certificate_pem = (char*)TEST_RSA_CERT;
-    result = parse_certificate(&cert_info);
+    //cert_info.certificate_pem = (char*)TEST_RSA_CERT;
+    //result = parse_certificate(&cert_info);
 
     //getchar();
     return result;

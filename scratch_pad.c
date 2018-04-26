@@ -1,10 +1,11 @@
 // Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
-#include <vld.h>
+//#include <vld.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <time.h>
+#include <inttypes.h>
 
 #include "azure_c_shared_utility/base64.h"
 #include "azure_c_shared_utility/buffer_.h"
@@ -210,6 +211,36 @@ static char* get_object_id_value(const ASN1_OBJECT* target_obj)
     return NULL;
 }
 
+time_t tm_to_utc(const struct tm *tm)
+{
+    // Month-to-day offset for non-leap-years.
+    static const int month_day[] =
+    { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+
+    // Most of the calculation is easy; leap years are the main difficulty.
+    int month = tm->tm_mon % 12;
+    int year = tm->tm_year + tm->tm_mon / 12;
+    if (month < 0) // Negative values % 12 are still negative.
+    {   
+        month += 12;
+        --year;
+    }
+
+    // This is the number of Februaries since 1900.
+    const int year_for_leap = (month > 1) ? year + 1 : year;
+
+    // Construct the UTC value
+    time_t result = tm->tm_sec                      // Seconds
+        + 60 * (tm->tm_min                          // Minute = 60 seconds
+        + 60 * (tm->tm_hour                         // Hour = 60 minutes
+        + 24 * (month_day[month] + tm->tm_mday - 1  // Day = 24 hours
+        + 365 * (year - 70)                         // Year = 365 days
+        + (year_for_leap - 69) / 4                  // Every 4 years is     leap...
+        - (year_for_leap - 1) / 100                 // Except centuries...
+        + (year_for_leap + 299) / 400)));           // Except 400s.
+    return result < 0 ? -1 : result;
+}
+
 static time_t get_utctime_value(const unsigned char* time_value)
 {
     time_t result;
@@ -272,7 +303,7 @@ static time_t get_utctime_value(const unsigned char* time_value)
                     break;
             }
         }
-        result = mktime(&target_time);
+        result = tm_to_utc(&target_time);
     }
     return result;
 }
@@ -522,9 +553,9 @@ static int parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STATE s
             int64_t value = cert_info->not_before;
 
             printf("Not before: %s", ctime(&cert_info->not_before));
-            printf("Not before val: %I64d\n", cert_info->not_before);
+            printf("Not before val: %" PRIu64 "\n", cert_info->not_before);
             printf("Not after: %s", ctime(&cert_info->not_after));
-            printf("Not after val: %I64d", cert_info->not_after);
+            printf("Not after val: %" PRIu64 "\n", cert_info->not_after);
 
 
             // Only parsing the TBS area of the certificate
@@ -578,34 +609,6 @@ static int parse_certificate_file(const char* filename, CERT_INFO* cert_info)
     return result;
 }
 
-time_t tm_to_utc(const struct tm *tm)
-{
-    // Month-to-day offset for non-leap-years.
-    static const int month_day[] =
-    { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
-
-    // Most of the calculation is easy; leap years are the main difficulty.
-    int month = tm->tm_mon % 12;
-    int year = tm->tm_year + tm->tm_mon / 12;
-    if (month < 0) // Negative values % 12 are still negative.
-    {   
-        month += 12;
-        --year;
-    }
-
-    // This is the number of Februaries since 1900.
-    const int year_for_leap = (month > 1) ? year + 1 : year;
-    time_t result = tm->tm_sec                             // Seconds
-        + 60 * (tm->tm_min                          // Minute = 60 seconds
-            + 60 * (tm->tm_hour                         // Hour = 60 minutes
-                + 24 * (month_day[month] + tm->tm_mday - 1  // Day = 24 hours
-                    + 365 * (year - 70)                         // Year = 365 days
-                    + (year_for_leap - 69) / 4                  // Every 4 years is     leap...
-                    - (year_for_leap - 1) / 100                 // Except centuries...
-                    + (year_for_leap + 299) / 400)));           // Except 400s.
-    return result < 0 ? -1 : result;
-}
-
 int main(void)
 {
     int result;
@@ -637,14 +640,16 @@ int main(void)
 
     // https://www.epochconverter.com/
 
-    time_t local = 1484969133;
-    struct tm* utc_time = gmtime(&local);
-    time_t utc = tm_to_utc(utc_time);
+    time_t now = time(NULL);
+    struct tm* local_time = localtime(&now);
+
+    
+    time_t utc = tm_to_utc(local_time);
 
 
-    char buf[30];
-    strftime(buf, sizeof(buf), "%F %T %Z\n", utc_time);
-    printf("%s\n", buf);
+    //char buf[30];
+    //strftime(buf, sizeof(buf), "%F %T %Z\n", utc_time);
+    //printf("%s\n", buf);
 
 
 

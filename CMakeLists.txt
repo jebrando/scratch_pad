@@ -29,7 +29,7 @@ IF(WIN32)
 ELSE()
     # Make warning as error
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror -Wno-unused-function -Wno-variadic-macros -fPIC")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -Wno-unused-function -Wno-variadic-macros -fPIC")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -Wno-unused-function -Wno-unused-variable -Wno-variadic-macros -fPIC")
 ENDIF(WIN32)
 
 add_executable(scratch_pad ${source_c_files})

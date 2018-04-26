@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
+#include <vld.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -52,6 +53,7 @@ extensions             [3] EXPLICIT Extensions OPTIONAL
 #define TEMP_DATE_LENGTH    32
 #define NOT_AFTER_OFFSET    15
 #define TIME_FIELD_LENGTH   0x0D
+#define END_HEADER_LENGTH   25
 
 typedef enum X509_ASN1_STATE_TAG
 {
@@ -95,8 +97,9 @@ typedef enum TBS_CERTIFICATE_FIELD_TAG
     FIELD_EXTENSIONS
 } TBS_CERTIFICATE_FIELD;
 
-typedef struct TBS_CERT_INFO_TAG
+typedef struct CERT_INFO_TAG
 {
+    char* certificate_pem;
     uint32_t version;
     uint32_t* serial_num;
     int signature;
@@ -104,7 +107,8 @@ typedef struct TBS_CERT_INFO_TAG
     time_t not_before;
     time_t not_after;
     char* subject;
-} TBS_CERT_INFO;
+    const char* cert_chain;
+} CERT_INFO;
 
 typedef struct ASN1_OBJECT_TAG
 {
@@ -121,6 +125,18 @@ static const char* CERT_2_PEM =
 "-----BEGIN CERTIFICATE-----""\n"
 "MIIBfTCCASSgAwIBAgIFGis8TV4wCgYIKoZIzj0EAwIwNDESMBAGA1UEAwwJcmlvdC1yb290MQswCQYDVQQGDAJVUzERMA8GA1UECgwITVNSX1RFU1QwHhcNMTcwMTAxMDAwMDAwWhcNMzcwMTAxMDAwMDAwWjA0MRIwEAYDVQQDDAlyaW90LXJvb3QxCzAJBgNVBAYMAlVTMREwDwYDVQQKDAhNU1JfVEVTVDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABGmrWiahUg/J7F2llfSXSLn+0j0JxZ0fp1DTlEnI/Jzr3x5bsP2eRppj0jflBPvU+qJwT7EFnq2a1Tz4OWKxzn2jIzAhMAsGA1UdDwQEAwIABDASBgNVHRMBAf8ECDAGAQH/AgEBMAoGCCqGSM49BAMCA0cAMEQCIFFcPW6545a5BNP+yn9U/c0MwemXvzddylFa0KbDtANfAiB0rxBRLP1e7vZtzjJsLP6njjO6qWoArXRuTV2nDO3S9g==""\n"
 "-----END CERTIFICATE-----";
+static const char* TEST_RSA_CERT =
+"-----BEGIN CERTIFICATE-----""\n"
+"MIICpDCCAYwCCQCgAJQdOd6dNzANBgkqhkiG9w0BAQsFADAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwHhcNMTcwMTIwMTkyNTMzWhcNMjcwMTE4MTkyNTMzWjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDlJ3fRNWm05BRAhgUY7cpzaxHZIORomZaOp2Uua5yv+psdkpv35ExLhKGrUIK1AJLZylnue0ohZfKPFTnoxMHOecnaaXZ9RA25M7XGQvw85ePlGOZKKf3zXw3Ds58GFY6Sr1SqtDopcDuMmDSg/afYVvGHDjb2Fc4hZFip350AADcmjH5SfWuxgptCY2Jl6ImJoOpxt+imWsJCJEmwZaXw+eZBb87e/9PH4DMXjIUFZebShowAfTh/sinfwRkaLVQ7uJI82Ka/icm6Hmr56j7U81gDaF0DhC03ds5lhN7nMp5aqaKeEJiSGdiyyHAescfxLO/SMunNc/eG7iAirY7BAgMBAAEwDQYJKoZIhvcNAQELBQADggEBACU7TRogb8sEbv+SGzxKSgWKKbw+FNgC4Zi6Fz59t+4jORZkoZ8W87NM946wvkIpxbLKuc4F+7nTGHHksyHIiGC3qPpi4vWpqVeNAP+kfQptFoWEOzxD7jQTWIcqYhvssKZGwDk06c/WtvVnhZOZW+zzJKXA7mbwJrfp8VekOnN5zPwrOCumDiRX7BnEtMjqFDgdMgs9ohR5aFsI7tsqp+dToLKaZqBLTvYwCgCJCxdg3QvMhVD8OxcEIFJtDEwm3h9WFFO3ocabCmcMDyXUL354yaZ7RphCBLd06XXdaUU/eV6fOjY6T5ka4ZRJcYDJtjxSG04XPtxswQfrPGGoFhk=""\n"
+"-----END CERTIFICATE-----";
+static const char* TEST_ECC_CERT =
+"-----BEGIN CERTIFICATE-----""\n"
+"MIIBfTCCASSgAwIBAgIFGis8TV4wCgYIKoZIzj0EAwIwNDESMBAGA1UEAwwJcmlvdC1yb290MQswCQYDVQQGDAJVUzERMA8GA1UECgwITVNSX1RFU1QwHhcNMTcwMTAxMDAwMDAwWhcNMzcwMTAxMDAwMDAwWjA0MRIwEAYDVQQDDAlyaW90LXJvb3QxCzAJBgNVBAYMAlVTMREwDwYDVQQKDAhNU1JfVEVTVDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABGmrWiahUg/J7F2llfSXSLn+0j0JxZ0fp1DTlEnI/Jzr3x5bsP2eRppj0jflBPvU+qJwT7EFnq2a1Tz4OWKxzn2jIzAhMAsGA1UdDwQEAwIABDASBgNVHRMBAf8ECDAGAQH/AgEBMAoGCCqGSM49BAMCA0cAMEQCIFFcPW6545a5BNP+yn9U/c0MwemXvzddylFa0KbDtANfAiB0rxBRLP1e7vZtzjJsLP6njjO6qWoArXRuTV2nDO3S9g==""\n"
+"-----END CERTIFICATE-----";
+
+static const char* CERT_AGENT_FILENAME = "G:\\certificates\\Edge\\edge-agent-ca\\edge-agent-ca.cert.pem";
+static const char* CERT_CHAIN_FILENAME = "G:\\certificates\\Edge\\edge-chain-ca\\edge-chain-ca.cert.pem";
+static const char* CERT_SERVER_FILENAME = "G:\\certificates\\Edge\\edge-hub-server\\edge-hub-server.cert.pem";
 
 #ifdef WIN32
     //static const char* TARGET_CERT = "G:\\Enlistment\\scratch_pad\\cert\\rsa_cert.pem";
@@ -188,7 +204,7 @@ static void save_data(const char* filename, const unsigned char* data, size_t le
     }
 }
 
-static char* get_object_id_value(ASN1_OBJECT target_obj)
+static char* get_object_id_value(const ASN1_OBJECT* target_obj)
 {
     // TODO: need to implement
     return NULL;
@@ -236,6 +252,7 @@ static time_t get_utctime_value(const unsigned char* time_value)
                     temp_idx = 0;
                     break;
                 case 7:
+                    // Set the hour
                     numeric_val = atol(temp_value);
                     target_time.tm_hour = numeric_val-1;
                     memset(temp_value, 0, TEMP_DATE_LENGTH);
@@ -260,48 +277,85 @@ static time_t get_utctime_value(const unsigned char* time_value)
     return result;
 }
 
-static BUFFER_HANDLE decode_cert(char* cert_pem)
+static BUFFER_HANDLE decode_certificate(CERT_INFO* cert_info)
 {
     BUFFER_HANDLE result;
-    char placeholder = '\0';
-    const char* begin_header = cert_pem;
-    char* end_header;
+    const char* iterator = cert_info->certificate_pem;
+    char* cert_base64;
+    size_t cert_idx = 0;
 
-    if (*begin_header == '-')
+    // Allocate enough space for the certificate, 
+    // no need to do append a +1 due to we're not
+    // copying the headers
+    size_t len = strlen(iterator);
+    if ((cert_base64 = malloc(len)) == NULL)
     {
-        // Go through the cert header and remove the ----- XXXX -----
-        while (begin_header != NULL && *begin_header != '\n')
-        {
-            begin_header++;
-        }
-        begin_header++;
-
-        // Remove \n in the file if found
-
-        end_header = (char*)begin_header;
-        // Loop through till we find a \n followed by -
-        while (*end_header != '\0' && end_header + 1 != NULL)
-        {
-            if (*end_header == '\n' && *(end_header + 1) == '-')
-            {
-                placeholder = *end_header;
-                *end_header = '\0';
-                break;
-            }
-            end_header++;
-        }
+        LogError("Failure allocating base64 decoding certificate");
+        result = NULL;
     }
-    result = Base64_Decoder(begin_header);
-
-    // Put the cert back the way we found it
-    if (placeholder != '\0')
+    else
     {
-        *end_header = placeholder;
+        bool begin_hdr_end = false;
+        int begin_hdr_len = 0;
+        memset(cert_base64, 0, len);
+        // If the cert does not begin with a '-' then
+        // the certificate doesn't have a header
+        if (*iterator != '-')
+        {
+            begin_hdr_end = true;
+        }
+        while (*iterator != '\0')
+        {
+            if (begin_hdr_end)
+            {
+                // Once we are in the header then, copy the cert excluding \r\n
+                if (*iterator != '\r' && *iterator != '\n')
+                {
+                    cert_base64[cert_idx++] = *iterator;
+                }
+                if (*iterator == '\n' && *(iterator + 1) == '-')
+                {
+                    // Check to see if we have a chain embedded in the certificate
+                    // if we've have more data after the END HEADER then we have a chain
+                    if ((((iterator - cert_info->certificate_pem) + END_HEADER_LENGTH) + begin_hdr_len) < (int)len)
+                    {
+                        iterator++;
+                        // Find the certificate chain here for later use
+                        while (*iterator != '\0')
+                        {
+                            // check for end header
+                            if (*iterator == '\n')
+                            {
+                                cert_info->cert_chain = iterator+1;
+                                break;
+                            }
+                            iterator++;
+                        }
+                    }
+
+                    // If we encounter the \n- to signal the end header break out
+                    break;
+                }
+            }
+            else if (!begin_hdr_end && *iterator == '\n')
+            {
+                // Loop through the cert until we get to the \n at the end
+                // of the header
+                begin_hdr_end = true;
+            }
+            else
+            {
+                begin_hdr_len++;
+            }
+            iterator++;
+        }
+        result = Base64_Decoder(cert_base64);
+        free(cert_base64);
     }
     return result;
 }
 
-static size_t calculate_size(unsigned char* buff, size_t* pos_change)
+static size_t calculate_size(const unsigned char* buff, size_t* pos_change)
 {
     // TODO: Read spec to see the max size field
     size_t result;
@@ -344,7 +398,7 @@ static size_t parse_asn1_object(unsigned char* tbs_info, ASN1_OBJECT* asn1_obj)
     return pos_change;
 }
 
-static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INFO* tbs_cert_info)
+static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, CERT_INFO* tbs_cert_info)
 {
     int result = 0;
     int continue_loop = 0;
@@ -383,13 +437,15 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
                 }
                 else
                 {
-                    result = __LINE__;
+                    // RFC 5280: Version is optional, assume version 1
+                    tbs_cert_info->version = 1;
+                    tbs_field = FIELD_SERIAL_NUM;
                 }
                 break;
             case FIELD_SERIAL_NUM:
                 // OID
                 parse_asn1_object(iterator, &target_obj);
-                get_object_id_value(target_obj);
+                get_object_id_value(&target_obj);
                 iterator += target_obj.length + TLV_OVERHEAD_SIZE; // Increment lenght plus type and length
                 tbs_field = FIELD_SIGNATURE;
                 break;
@@ -422,8 +478,6 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
                     }
                     else
                     {
-                        printf("Not before: %s", ctime(&tbs_cert_info->not_before));
-                        printf("Not after: %s", ctime(&tbs_cert_info->not_after));
                         iterator += target_obj.length + TLV_OVERHEAD_SIZE;
                         tbs_field = FIELD_SUBJECT;   // Go to the next field
                         continue_loop = 1;
@@ -446,9 +500,9 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, TBS_CERT_INF
     return result;
 }
 
-static size_t parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STATE state, TBS_CERT_INFO* tbs_cert_info)
+static int parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STATE state, CERT_INFO* cert_info)
 {
-    size_t result = 0;
+    int result = 0;
     for (size_t index = 0; index < len; index++)
     {
         if (section[index] == ASN1_MARKER)
@@ -457,12 +511,22 @@ static size_t parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STAT
             size_t offset;
             size_t section_size = calculate_size(&section[index], &offset);
             index += offset;
-            parse_asn1_data(section+index, section_size, STATE_TBS_CERTIFICATE, tbs_cert_info);
+            result = parse_asn1_data(section + index, section_size, STATE_TBS_CERTIFICATE, cert_info);
+            break;
 
         }
         else if (state == STATE_TBS_CERTIFICATE)
         {
-            result = parse_tbs_cert_info(&section[index], len, tbs_cert_info);
+            result = parse_tbs_cert_info(&section[index], len, cert_info);
+
+            int64_t value = cert_info->not_before;
+
+            printf("Not before: %s", ctime(&cert_info->not_before));
+            printf("Not before val: %I64d\n", cert_info->not_before);
+            printf("Not after: %s", ctime(&cert_info->not_after));
+            printf("Not after val: %I64d", cert_info->not_after);
+
+
             // Only parsing the TBS area of the certificate
             break;
         }
@@ -470,69 +534,123 @@ static size_t parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STAT
     return result;
 }
 
-static int parse_certificate(const char* filename)
+static int parse_certificate(CERT_INFO* cert_info)
 {
     int result;
-    char* certificate = open_certificate(filename);
-    if (certificate == NULL)
+
+    BUFFER_HANDLE cert_bin = decode_certificate(cert_info);
+    // Free the certificate data
+    if (cert_bin == NULL)
     {
         result = __LINE__;
     }
     else
     {
-        BUFFER_HANDLE decoded_cert;
-
-        decoded_cert = decode_cert(certificate);
-        // Free the certificate data
-        free(certificate);
-        if (decoded_cert == NULL)
+        unsigned char* cert_buffer = BUFFER_u_char(cert_bin);
+        size_t cert_buff_len = BUFFER_length(cert_bin);
+        if (parse_asn1_data(cert_buffer, cert_buff_len, STATE_INITIAL, cert_info) != 0)
         {
+            LogError("Failure parsing asn1 data field");
             result = __LINE__;
         }
         else
         {
-            unsigned char* cert_buffer = BUFFER_u_char(decoded_cert);
-            size_t cert_buff_len = BUFFER_length(decoded_cert);
-            // Read 
-            TBS_CERT_INFO tbs_cert_info;
-            parse_asn1_data(cert_buffer, cert_buff_len, STATE_INITIAL, &tbs_cert_info);
-
-            //save_data(BINARY_DATA, BUFFER_u_char(decoded_cert), BUFFER_length(decoded_cert));
-            BUFFER_delete(decoded_cert);
             result = 0;
         }
+        BUFFER_delete(cert_bin);
     }
     return result;
 }
 
-static int parse(const char* cert_pem)
+static int parse_certificate_file(const char* filename, CERT_INFO* cert_info)
 {
     int result;
-    BUFFER_HANDLE decoded_cert = decode_cert((char*)cert_pem);
-    if (decoded_cert == NULL)
+    cert_info->certificate_pem = open_certificate(filename);
+    if (cert_info->certificate_pem == NULL)
     {
-        LogError("Failure decoding certificate");
         result = __LINE__;
     }
     else
     {
-        unsigned char* cert_buffer = BUFFER_u_char(decoded_cert);
-        size_t cert_buff_len = BUFFER_length(decoded_cert);
-        // Read 
-        TBS_CERT_INFO tbs_cert_info;
-        parse_asn1_data(cert_buffer, cert_buff_len, STATE_INITIAL, &tbs_cert_info);
-
-        //save_data(BINARY_DATA, BUFFER_u_char(decoded_cert), BUFFER_length(decoded_cert));
-        BUFFER_delete(decoded_cert);
-        result = 0;
+        result = parse_certificate(cert_info);
+        free(cert_info->certificate_pem);
     }
     return result;
+}
+
+time_t tm_to_utc(const struct tm *tm)
+{
+    // Month-to-day offset for non-leap-years.
+    static const int month_day[] =
+    { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+
+    // Most of the calculation is easy; leap years are the main difficulty.
+    int month = tm->tm_mon % 12;
+    int year = tm->tm_year + tm->tm_mon / 12;
+    if (month < 0) // Negative values % 12 are still negative.
+    {   
+        month += 12;
+        --year;
+    }
+
+    // This is the number of Februaries since 1900.
+    const int year_for_leap = (month > 1) ? year + 1 : year;
+    time_t result = tm->tm_sec                             // Seconds
+        + 60 * (tm->tm_min                          // Minute = 60 seconds
+            + 60 * (tm->tm_hour                         // Hour = 60 minutes
+                + 24 * (month_day[month] + tm->tm_mday - 1  // Day = 24 hours
+                    + 365 * (year - 70)                         // Year = 365 days
+                    + (year_for_leap - 69) / 4                  // Every 4 years is     leap...
+                    - (year_for_leap - 1) / 100                 // Except centuries...
+                    + (year_for_leap + 299) / 400)));           // Except 400s.
+    return result < 0 ? -1 : result;
 }
 
 int main(void)
 {
     int result;
-    //result = parse_certificate(TARGET_CERT);
-    result = parse(CERTIFICATE_PEM);
+    CERT_INFO cert_info;
+    memset(&cert_info, 0, sizeof(CERT_INFO));
+    //result = parse_certificate_file(CERT_AGENT_FILENAME, &cert_info);
+    //result = parse_certificate_file(CERT_CHAIN_FILENAME, &cert_info);
+
+    /*time_t now = time(NULL);
+
+    struct tm* utc_tm = gmtime(&now);
+    utc_tm->tm_isdst = 0;
+    time_t utc_time = mktime(utc_tm);
+
+    struct tm* local_tm = localtime(&now);
+    local_tm->tm_isdst = 0;
+    time_t local = mktime(local_tm);
+
+    char buf[30];
+    strftime(buf, sizeof(buf), "%F %T %Z\n", local_tm);
+    printf("%s\n", buf);
+
+
+    int64_t local_time_offset = utc_time - local;
+
+    int64_t found_value = 1484969133;
+
+    int64_t correct_value = found_value - local_time_offset;*/
+
+    // https://www.epochconverter.com/
+
+    time_t local = 1484969133;
+    struct tm* utc_time = gmtime(&local);
+    time_t utc = tm_to_utc(utc_time);
+
+
+    char buf[30];
+    strftime(buf, sizeof(buf), "%F %T %Z\n", utc_time);
+    printf("%s\n", buf);
+
+
+
+    cert_info.certificate_pem = (char*)TEST_RSA_CERT;
+    result = parse_certificate(&cert_info);
+
+    //getchar();
     return result;
 }

@@ -73,8 +73,6 @@ typedef enum ASN1_TYPE_TAG
     ASN1_NULL = 0x5,
     ASN1_OBJECT_ID = 0x6,
     ASN1_UTF8_STRING = 0xC,
-    //ASN1_SET = 0x11,
-    //ASN1_NUMERICAL_STRING = 0x13,
     ASN1_PRINTABLE_STRING = 0x13,
     ASN1_T61_STRING = 0x16,
     ASN1_UTCTIME = 0x17,
@@ -83,6 +81,16 @@ typedef enum ASN1_TYPE_TAG
     ASN1_SET = 0x31,
     ASN1_INVALID
 } ASN1_TYPE;
+
+typedef enum TIME_POS_TYPE_TAG
+{
+    TIME_TYPE_YEAR = 1,
+    TIME_TYPE_MONTH = 3,
+    TIME_TYPE_DAY = 5,
+    TIME_TYPE_HOUR = 7,
+    TIME_TYPE_MIN = 9,
+    TIME_TYPE_SEC = 11
+} TIME_POS_TYPE;
 
 typedef enum TBS_CERTIFICATE_FIELD_TAG
 {
@@ -117,6 +125,24 @@ typedef struct ASN1_OBJECT_TAG
     uint32_t length;
     const unsigned char* value;
 } ASN1_OBJECT;
+
+// Construct the number of days of the start of each month
+// exclude leap year (they are taken care of below)
+static const int month_day[] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
+
+#define ASN1_MARKER         0x30
+#define LENGTH_EXTENTION    0x82
+#define ASN1_TYPE_INTEGER   0x02
+#define EXTENDED_LEN_FLAG   0x80
+#define LEN_FLAG_COUNT      0x7F
+#define TLV_OVERHEAD_SIZE   0x2
+#define LENGTH_OF_VALIDITY  0x1E
+#define TEMP_DATE_LENGTH    32
+#define NOT_AFTER_OFFSET    15
+#define TIME_FIELD_LENGTH   0x0D
+#define GENERAL_TIME_LENGTH 0x0F
+#define END_HEADER_LENGTH   25
+#define INVALID_TIME        -1
 
 static const char* CERTIFICATE_PEM =
 "-----BEGIN CERTIFICATE-----""\n"
@@ -211,112 +237,6 @@ static void save_data(const char* filename, const unsigned char* data, size_t le
     }
 }
 
-static char* get_object_id_value(const ASN1_OBJECT* target_obj)
-{
-    // TODO: need to implement
-    return NULL;
-}
-
-time_t tm_to_utc(const struct tm *tm)
-{
-    // Month-to-day offset for non-leap-years.
-    static const int month_day[] =
-    { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
-
-    // Most of the calculation is easy; leap years are the main difficulty.
-    int month = tm->tm_mon % 12;
-    int year = tm->tm_year + tm->tm_mon / 12;
-    if (month < 0) // Negative values % 12 are still negative.
-    {   
-        month += 12;
-        --year;
-    }
-
-    // This is the number of Februaries since 1900.
-    const int year_for_leap = (month > 1) ? year + 1 : year;
-
-    // Construct the UTC value
-    time_t result = tm->tm_sec                      // Seconds
-        + 60 * (tm->tm_min                          // Minute = 60 seconds
-        + 60 * (tm->tm_hour                         // Hour = 60 minutes
-        + 24 * (month_day[month] + tm->tm_mday - 1  // Day = 24 hours
-        + 365 * (year - 70)                         // Year = 365 days
-        + (year_for_leap - 69) / 4                  // Every 4 years is     leap...
-        - (year_for_leap - 1) / 100                 // Except centuries...
-        + (year_for_leap + 299) / 400)));           // Except 400s.
-    return result < 0 ? -1 : result;
-}
-
-static time_t get_utctime_value(const unsigned char* time_value)
-{
-    time_t result;
-    char temp_value[TEMP_DATE_LENGTH];
-    size_t temp_idx = 0;
-    struct tm target_time;
-    uint32_t numeric_val;
-    memset(&target_time, 0, sizeof(target_time));
-    memset(temp_value, 0, TEMP_DATE_LENGTH);
-
-    // Check the the type and the lenght
-    if (*time_value != ASN1_UTCTIME || *(time_value+1) != TIME_FIELD_LENGTH)
-    {
-        result = 0;
-    }
-    else
-    {
-        // Don't evaluate the Z at the end of the UTC time field
-        for (size_t index = 0; index < TIME_FIELD_LENGTH-1; index++)
-        {
-            temp_value[temp_idx++] = time_value[index+2];
-            switch (index)
-            {
-                case 1:
-                    numeric_val = atol(temp_value) + 100;
-                    target_time.tm_year = numeric_val;
-                    memset(temp_value, 0, TEMP_DATE_LENGTH);
-                    temp_idx = 0;
-                    break;
-                case 3:
-                    numeric_val = atol(temp_value);
-                    target_time.tm_mon = numeric_val - 1;
-                    memset(temp_value, 0, TEMP_DATE_LENGTH);
-                    temp_idx = 0;
-                    break;
-                case 5:
-                    numeric_val = atol(temp_value);
-                    target_time.tm_mday = numeric_val;
-                    memset(temp_value, 0, TEMP_DATE_LENGTH);
-                    temp_idx = 0;
-                    break;
-                case 7:
-                    // Set the hour
-                    numeric_val = atol(temp_value);
-                    target_time.tm_hour = numeric_val;
-                    memset(temp_value, 0, TEMP_DATE_LENGTH);
-                    temp_idx = 0;
-                    break;
-                case 9:
-                    numeric_val = atol(temp_value);
-                    target_time.tm_min = numeric_val;
-                    memset(temp_value, 0, TEMP_DATE_LENGTH);
-                    temp_idx = 0;
-                    break;
-                case 11:
-                    numeric_val = atol(temp_value);
-                    target_time.tm_sec = numeric_val;
-                    memset(temp_value, 0, TEMP_DATE_LENGTH);
-                    temp_idx = 0;
-                    break;
-            }
-        }
-        result = tm_to_utc(&target_time);
-printf("time: %d-%d-%d %d:%02d:%02d\r\n", target_time.tm_year+1900, target_time.tm_mon, target_time.tm_mday,
-    target_time.tm_hour, target_time.tm_min, target_time.tm_sec);
-printf("Not before val: %" PRIu64 "\n", result);
-    }
-    return result;
-}
-
 static BUFFER_HANDLE decode_certificate(CERT_INFO* cert_info)
 {
     BUFFER_HANDLE result;
@@ -366,7 +286,7 @@ static BUFFER_HANDLE decode_certificate(CERT_INFO* cert_info)
                             // check for end header
                             if (*iterator == '\n')
                             {
-                                cert_info->cert_chain = iterator+1;
+                                cert_info->cert_chain = iterator + 1;
                                 break;
                             }
                             iterator++;
@@ -391,6 +311,150 @@ static BUFFER_HANDLE decode_certificate(CERT_INFO* cert_info)
         }
         result = Base64_Decoder(cert_base64);
         free(cert_base64);
+    }
+    return result;
+}
+
+static char* get_object_id_value(const ASN1_OBJECT* target_obj)
+{
+    // TODO: need to implement
+    return NULL;
+}
+
+static time_t tm_to_utc(const struct tm *tm)
+{
+    // Most of the calculation is easy; leap years are the main difficulty.
+    int month = tm->tm_mon % 12;
+    int year = tm->tm_year + tm->tm_mon / 12;
+    if (month < 0) // handle negative values (% 12 are still negative).
+    {
+        month += 12;
+        --year;
+    }
+
+    // This is the number of Februaries since 1900.
+    const int year_for_leap = (month > 1) ? year + 1 : year;
+
+    // Construct the UTC value
+    time_t result = tm->tm_sec                      // Seconds
+        + 60 * (tm->tm_min                          // Minute = 60 seconds
+            + 60 * (tm->tm_hour                         // Hour = 60 minutes
+                + 24 * (month_day[month] + tm->tm_mday - 1  // Day = 24 hours
+                    + 365 * (year - 70)                         // Year = 365 days
+                    + (year_for_leap - 69) / 4                  // Every 4 years is     leap...
+                    - (year_for_leap - 1) / 100                 // Except centuries...
+                    + (year_for_leap + 299) / 400)));           // Except 400s.
+    return result < 0 ? -1 : result;
+}
+
+static int is_time_type(TIME_POS_TYPE type, size_t index, uint8_t asn1_type)
+{
+    int result;
+    size_t offset = 0;
+    if (asn1_type == ASN1_GENERALIZED_STRING)
+    {
+        offset = 2;
+    }
+    if (index == (type + offset))
+    {
+        result = 0;
+    }
+    else
+    {
+        result = 1;
+    }
+    return result;
+}
+
+static time_t get_utctime_value(const unsigned char* time_value)
+{
+    time_t result;
+    char temp_value[TEMP_DATE_LENGTH];
+    size_t temp_idx = 0;
+    struct tm target_time;
+    uint32_t numeric_val;
+    memset(&target_time, 0, sizeof(target_time));
+    memset(temp_value, 0, TEMP_DATE_LENGTH);
+
+    size_t time_length = *(time_value + 1);
+    ASN1_TYPE current_type = *time_value;
+    // Check the the type and the length
+    if (current_type != ASN1_UTCTIME && current_type != ASN1_GENERALIZED_STRING)
+    {
+        LogError("Failure Invalid type specified for the time");
+        result = 0;
+    }
+    else if (current_type == ASN1_UTCTIME && time_length != TIME_FIELD_LENGTH)
+    {
+        LogError("Failure Invalid length specified for length");
+        result = 0;
+    }
+    else if (current_type == ASN1_GENERALIZED_STRING && time_length != GENERAL_TIME_LENGTH)
+    {
+        LogError("Failure Invalid length specified for length");
+        result = 0;
+    }
+    else
+    {
+        TIME_POS_TYPE curr_time_pos = TIME_TYPE_YEAR;
+        // Don't evaluate the Z at the end of the UTC time field
+        for (size_t index = 0; index < time_length - 1; index++)
+        {
+            temp_value[temp_idx++] = time_value[index + 2];
+
+            if (is_time_type(curr_time_pos, index, current_type) == 0)
+            {
+                switch (curr_time_pos)
+                {
+                case TIME_TYPE_YEAR:
+                    numeric_val = atol(temp_value);
+                    if (current_type == ASN1_UTCTIME)
+                    {
+                        numeric_val += 100;
+                    }
+                    target_time.tm_year = numeric_val;
+                    memset(temp_value, 0, TEMP_DATE_LENGTH);
+                    temp_idx = 0;
+                    curr_time_pos = TIME_TYPE_MONTH;
+                    break;
+                case TIME_TYPE_MONTH:
+                    numeric_val = atol(temp_value);
+                    target_time.tm_mon = numeric_val - 1;
+                    memset(temp_value, 0, TEMP_DATE_LENGTH);
+                    temp_idx = 0;
+                    curr_time_pos = TIME_TYPE_DAY;
+                    break;
+                case TIME_TYPE_DAY:
+                    numeric_val = atol(temp_value);
+                    target_time.tm_mday = numeric_val;
+                    memset(temp_value, 0, TEMP_DATE_LENGTH);
+                    temp_idx = 0;
+                    curr_time_pos = TIME_TYPE_HOUR;
+                    break;
+                case TIME_TYPE_HOUR:
+                    numeric_val = atol(temp_value);
+                    target_time.tm_hour = numeric_val;
+                    memset(temp_value, 0, TEMP_DATE_LENGTH);
+                    temp_idx = 0;
+                    curr_time_pos = TIME_TYPE_MIN;
+                    break;
+                case TIME_TYPE_MIN:
+                    numeric_val = atol(temp_value);
+                    target_time.tm_min = numeric_val;
+                    memset(temp_value, 0, TEMP_DATE_LENGTH);
+                    temp_idx = 0;
+                    curr_time_pos = TIME_TYPE_SEC;
+                    break;
+                case TIME_TYPE_SEC:
+                    numeric_val = atol(temp_value);
+                    target_time.tm_sec = numeric_val;
+                    memset(temp_value, 0, TEMP_DATE_LENGTH);
+                    temp_idx = 0;
+                    break;
+                }
+            }
+        }
+        result = tm_to_utc(&target_time);
     }
     return result;
 }
@@ -438,7 +502,7 @@ static size_t parse_asn1_object(unsigned char* tbs_info, ASN1_OBJECT* asn1_obj)
     return pos_change;
 }
 
-static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, CERT_INFO* tbs_cert_info)
+static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, CERT_INFO* cert_info)
 {
     int result = 0;
     int continue_loop = 0;
@@ -448,93 +512,93 @@ static int parse_tbs_cert_info(unsigned char* tbs_info, size_t len, CERT_INFO* t
     unsigned char* iterator = tbs_info;
     ASN1_OBJECT target_obj;
 
-    while ((iterator < tbs_info+len) && (result == 0) && (continue_loop == 0) )
+    while ((iterator < tbs_info + len) && (result == 0) && (continue_loop == 0))
     {
         switch (tbs_field)
         {
-            case FIELD_VERSION:
-                // Version field
-                if (*iterator == 0xA0) // Array type
+        case FIELD_VERSION:
+            // Version field
+            if (*iterator == 0xA0) // Array type
+            {
+                iterator++;
+                if (*iterator == 0x03) // Length of this array
                 {
                     iterator++;
-                    if (*iterator == 0x03) // Length of this array
-                    {
-                        iterator++;
-                        parse_asn1_object(iterator, &target_obj);
-                        // Validate version
-                        uint32_t temp;
-                        memcpy(&temp, target_obj.value, sizeof(uint32_t));
-                        (void)temp;
+                    parse_asn1_object(iterator, &target_obj);
+                    // Validate version
+                    uint32_t temp;
+                    memcpy(&temp, target_obj.value, sizeof(uint32_t));
+                    (void)temp;
 
-                        tbs_cert_info->version = target_obj.value[0];
-                        iterator += 3;  // Increment past the array type
-                        tbs_field = FIELD_SERIAL_NUM;
-                    }
-                    else
-                    {
-                        result = __LINE__;
-                    }
+                    cert_info->version = target_obj.value[0];
+                    iterator += 3;  // Increment past the array type
+                    tbs_field = FIELD_SERIAL_NUM;
                 }
                 else
                 {
-                    // RFC 5280: Version is optional, assume version 1
-                    tbs_cert_info->version = 1;
-                    tbs_field = FIELD_SERIAL_NUM;
+                    LogError("Parse Error: Invalid version field");
+                    result = __LINE__;
                 }
-                break;
-            case FIELD_SERIAL_NUM:
-                // OID
-                parse_asn1_object(iterator, &target_obj);
-                get_object_id_value(&target_obj);
-                iterator += target_obj.length + TLV_OVERHEAD_SIZE; // Increment lenght plus type and length
-                tbs_field = FIELD_SIGNATURE;
-                break;
-            case FIELD_SIGNATURE:
-                parse_asn1_object(iterator, &target_obj);
-                iterator += target_obj.length + TLV_OVERHEAD_SIZE;
-                tbs_field = FIELD_ISSUER;   // Go to the next field
-                break;
-            case FIELD_ISSUER:
-                size_len = parse_asn1_object(iterator, &target_obj);
-                iterator += target_obj.length + TLV_OVERHEAD_SIZE + (size_len-1); // adding len on issue due to the size being 
-                tbs_field = FIELD_VALIDITY;   // Go to the next field
-                break;
-            case FIELD_VALIDITY:
-                parse_asn1_object(iterator, &target_obj);
-                if (target_obj.length != LENGTH_OF_VALIDITY)
+            }
+            else
+            {
+                // RFC 5280: Version is optional, assume version 1
+                cert_info->version = 1;
+                tbs_field = FIELD_SERIAL_NUM;
+            }
+            break;
+        case FIELD_SERIAL_NUM:
+            // OID
+            parse_asn1_object(iterator, &target_obj);
+            get_object_id_value(&target_obj);
+            iterator += target_obj.length + TLV_OVERHEAD_SIZE; // Increment lenght plus type and length
+            tbs_field = FIELD_SIGNATURE;
+            break;
+        case FIELD_SIGNATURE:
+            parse_asn1_object(iterator, &target_obj);
+            iterator += target_obj.length + TLV_OVERHEAD_SIZE;
+            tbs_field = FIELD_ISSUER;   // Go to the next field
+            break;
+        case FIELD_ISSUER:
+            size_len = parse_asn1_object(iterator, &target_obj);
+            iterator += target_obj.length + TLV_OVERHEAD_SIZE + (size_len - 1); // adding len on issue due to the size being 
+            tbs_field = FIELD_VALIDITY;   // Go to the next field
+            break;
+        case FIELD_VALIDITY:
+            parse_asn1_object(iterator, &target_obj);
+            if (target_obj.length != LENGTH_OF_VALIDITY)
+            {
+                result = __LINE__;
+            }
+            else
+            {
+                // Convert the ASN1 UTC format to a time
+                if ((cert_info->not_before = get_utctime_value(target_obj.value)) == 0)
+                {
+                    result = __LINE__;
+                }
+                else if ((cert_info->not_after = get_utctime_value(target_obj.value + NOT_AFTER_OFFSET)) == 0)
                 {
                     result = __LINE__;
                 }
                 else
                 {
-                    // Convert 
-                    if ((tbs_cert_info->not_before = get_utctime_value(target_obj.value)) == 0)
-                    {
-                        result = __LINE__;
-                    }
-                    else if ((tbs_cert_info->not_after = get_utctime_value(target_obj.value + NOT_AFTER_OFFSET)) == 0)
-                    {
-                        result = __LINE__;
-                    }
-                    else
-                    {
-                        iterator += target_obj.length + TLV_OVERHEAD_SIZE;
-                        tbs_field = FIELD_SUBJECT;   // Go to the next field
-                        continue_loop = 1;
-                    }
+                    iterator += target_obj.length + TLV_OVERHEAD_SIZE;
+                    tbs_field = FIELD_SUBJECT;   // Go to the next field
                 }
-                break;
-            case FIELD_SUBJECT:
-                size_len = parse_asn1_object(iterator, &target_obj);
-                iterator += target_obj.length + TLV_OVERHEAD_SIZE + (size_len - 1); // adding len on issue due to the size being 
-                tbs_field = FIELD_VALIDITY;   // Go to the next field
-                continue_loop = 1;
-                break;
-            case FIELD_SUBJECT_PUBLIC_KEY_INFO:
-            case FIELD_ISSUER_UNIQUE_ID:
-            case FIELD_SUBJECT_UNIQUE_ID:
-            case FIELD_EXTENSIONS:
-                break;
+            }
+            break;
+        case FIELD_SUBJECT:
+            size_len = parse_asn1_object(iterator, &target_obj);
+            iterator += target_obj.length + TLV_OVERHEAD_SIZE + (size_len - 1); // adding len on issue due to the size being 
+            tbs_field = FIELD_VALIDITY;   // Go to the next field
+            continue_loop = 1;
+            break;
+        case FIELD_SUBJECT_PUBLIC_KEY_INFO:
+        case FIELD_ISSUER_UNIQUE_ID:
+        case FIELD_SUBJECT_UNIQUE_ID:
+        case FIELD_EXTENSIONS:
+            break;
         }
     }
     return result;
@@ -559,6 +623,7 @@ static int parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STATE s
         {
             result = parse_tbs_cert_info(&section[index], len, cert_info);
             // Only parsing the TBS area of the certificate
+            // Break here
             break;
         }
     }
@@ -568,11 +633,10 @@ static int parse_asn1_data(unsigned char* section, size_t len, X509_ASN1_STATE s
 static int parse_certificate(CERT_INFO* cert_info)
 {
     int result;
-
     BUFFER_HANDLE cert_bin = decode_certificate(cert_info);
-    // Free the certificate data
     if (cert_bin == NULL)
     {
+        LogError("Failure decoding certificate");
         result = __LINE__;
     }
     else

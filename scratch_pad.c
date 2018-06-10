@@ -92,6 +92,7 @@ static X509_REQ* create_request_object(EVP_PKEY* key)
     X509_REQ* result;
     X509_NAME* subj;
 
+    printf("creating crs object ...\r\n");
     if (!(result = X509_REQ_new()))
     {
         print_error("Failed to create X509_REQ object");
@@ -149,6 +150,7 @@ static int write_csr(X509_REQ* req, EVP_PKEY* key)
     int result;
     FILE *fp;
  
+    printf("Writing csr and private key\r\n");
     // write output files
     if (!(fp = fopen(REQ_FILE, "w")))
     {
@@ -235,5 +237,7 @@ int main(int argc, char *argv[])
         EVP_PKEY_free(key);
         X509_REQ_free(req);
     }
+
+    printf("Operation complete\r\n");
     return 0;
 }

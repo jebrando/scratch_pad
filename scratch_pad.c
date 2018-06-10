@@ -148,10 +148,46 @@ static X509_REQ* create_request_object(EVP_PKEY* key)
 static int write_csr(X509_REQ* req, EVP_PKEY* key)
 {
     int result;
-    FILE *fp;
  
     printf("Writing csr and private key\r\n");
+
+    BIO* bio_req;
+    BIO* bio_pk;
+
+    //if ((bio_req = BIO_new(BIO_s_mem())) == NULL)
+    if ((bio_req = BIO_new_file(REQ_FILE, "w")) == NULL)
+    {
+        printf("Error creating bio file");
+        result = __LINE__;
+    }
+    //else if ((bio_pk = BIO_new(BIO_s_mem())) == NULL)
+    else if ((bio_pk = BIO_new_file(KEY_FILE, "w")) == NULL)
+    {
+        printf("Error creating bio file");
+        BIO_free(bio_req);
+        result = __LINE__;
+    }
+    else
+    {
+        if (!PEM_write_bio_X509_REQ(bio_req, req))
+        {
+            printf("Error writing to request file");
+            result = __LINE__;
+        }
+        else
+        {
+            if (!PEM_write_bio_PrivateKey(bio_pk, key, NULL, NULL, 0, 0, 0))
+            {
+                printf("Error writing to private key file");
+                result = __LINE__;
+            }
+        }
+        BIO_free(bio_req);
+        BIO_free(bio_pk);
+    }
+
     // write output files
+    /*FILE *fp;
     if (!(fp = fopen(REQ_FILE, "w")))
     {
         printf("Error writing to request file");
@@ -184,7 +220,7 @@ static int write_csr(X509_REQ* req, EVP_PKEY* key)
             }
             fclose(fp);
         }
-    }
+    }*/
     return result;
 }
 

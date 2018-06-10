@@ -29,9 +29,6 @@ IF(WIN32)
 
     # Make warning as error
     add_definitions(/WX)
-    target_link_libraries(scratch_pad $ENV{OpenSSLDir}/lib/ssleay32.lib $ENV{OpenSSLDir}/lib/libeay32.lib)
-    file(COPY $ENV{OpenSSLDir}/bin/libeay32.dll DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/Release)
-    file(COPY $ENV{OpenSSLDir}/bin/ssleay32.dll DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/Release)
 ELSE()
     # Make warning as error
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror -Wno-unused-function -Wno-variadic-macros -fPIC")
@@ -41,3 +38,10 @@ ENDIF(WIN32)
 
 add_executable(scratch_pad ${source_c_files})
 target_link_libraries(scratch_pad ${OPENSSL_LIBRARIES})
+
+IF(WIN32)
+    target_link_libraries(scratch_pad $ENV{OpenSSLDir}/lib/ssleay32.lib $ENV{OpenSSLDir}/lib/libeay32.lib)
+    file(COPY $ENV{OpenSSLDir}/bin/libeay32.dll DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/Release)
+    file(COPY $ENV{OpenSSLDir}/bin/ssleay32.dll DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/Release)
+ELSE()
+ENDIF(WIN32)

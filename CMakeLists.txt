@@ -14,10 +14,14 @@ compileAsC99()
 include_directories(${HSM_INCLUDE_DIR} ${SHARED_UTIL_INC_FOLDER})
 
 set(source_c_files
+    ./blockchain.c
+    ./sha_algorithms.c
     ./scratch_pad.c
 )
 
 set(source_h_files
+    ./blockchain.h
+    ./sha_algorithms.h
 )
 
 IF(WIN32)
@@ -32,5 +36,5 @@ ELSE()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -Wno-unused-function -Wno-unused-variable -Wno-variadic-macros -fPIC")
 ENDIF(WIN32)
 
-add_executable(scratch_pad ${source_c_files})
+add_executable(scratch_pad ${source_h_files} ${source_c_files})
 target_link_libraries(scratch_pad aziotsharedutil)

@@ -1,15 +1,17 @@
 // Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//#include <vld.h>
+#include <vld.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <time.h>
 #include <inttypes.h>
+#include <limits.h>
 
 #include "azure_c_shared_utility/base64.h"
 #include "azure_c_shared_utility/buffer_.h"
 #include "azure_c_shared_utility/xlogging.h"
+#include "blockchain.h"
 
 // Reference https://msdn.microsoft.com/en-us/library/windows/desktop/bb540796(v=vs.85).aspx
 /*
@@ -673,13 +675,42 @@ static int parse_certificate_file(const char* filename, CERT_INFO* cert_info)
     return result;
 }
 
+typedef struct TRANSACTION_ITEMS_TAG
+{
+    int item1;
+    int item2;
+} TRANSACTION_ITEMS;
+
+TRANSACTION_ITEMS trans_list[] = {
+    { 1, 2 },
+    { 3, 4 }
+};
+
 int main(void)
 {
-    int result;
+    int result = 0;
     CERT_INFO cert_info;
     memset(&cert_info, 0, sizeof(CERT_INFO));
+
+    BLOCKCHAIN_HANDLE handle = blockchain_create(NULL);
+    if (handle == NULL)
+    {
+        printf("blockchain create failed\r\n");
+    }
+    else
+    {
+        for (size_t index = 0; index < sizeof(trans_list)/sizeof(trans_list[0]); index++)
+        {
+            if (add_block(handle, (const unsigned char*)&trans_list[index], sizeof(trans_list[index])) != 0)
+            {
+                printf("Adding item %ud failed\r\n", index);
+                break;
+            }
+        }
+        blockchain_destroy(handle);
+    }
     //result = parse_certificate_file(CERT_AGENT_FILENAME, &cert_info);
-    result = parse_certificate_file(CERT_CHAIN_FILENAME, &cert_info);
+    //result = parse_certificate_file(CERT_CHAIN_FILENAME, &cert_info);
 
     //cert_info.certificate_pem = (char*)TEST_RSA_CERT;
     //result = parse_certificate(&cert_info);

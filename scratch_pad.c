@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//#include <vld.h>
+#ifdef WIN32
+#include <vld.h>
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +14,13 @@
 #include <openssl/pem.h>
 #include <openssl/evp.h>
 
+// Parameter settings for this cert
+//
+#define RSA_KEY_SIZE (1024)
+#define ENTRIES     6
+static const char* const REQ_FILE = "dps_csr.csr";
+static const char* const KEY_FILE = "dps_csr.key";
+
 // Fatal error; abort with message, including file and line number
 //
 void fatal_error(const char *file, int line, const char *msg)
@@ -21,13 +30,6 @@ void fatal_error(const char *file, int line, const char *msg)
 }
 
 #define print_error(msg) fatal_error(__FILE__, __LINE__, msg)
-
-// Parameter settings for this cert
-//
-#define RSA_KEY_SIZE (1024)
-#define ENTRIES     6
-static const char* const REQ_FILE = "dps_csr.crt";
-static const char* const KEY_FILE = "dps_csr.key";
 
 // declare array of entries to assign to cert
 struct entry
@@ -174,13 +176,14 @@ static int write_csr(X509_REQ* req, EVP_PKEY* key)
             printf("Error writing to request file");
             result = __LINE__;
         }
+        else if (!PEM_write_bio_PrivateKey(bio_pk, key, NULL, NULL, 0, 0, 0))
+        {
+            printf("Error writing to private key file");
+            result = __LINE__;
+        }
         else
         {
-            if (!PEM_write_bio_PrivateKey(bio_pk, key, NULL, NULL, 0, 0, 0))
-            {
-                printf("Error writing to private key file");
-                result = __LINE__;
-            }
+            result = 0;
         }
         BIO_free(bio_req);
         BIO_free(bio_pk);

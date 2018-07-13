@@ -5,6 +5,7 @@
 
 #include "blockchain.h"
 #include "sha_algorithms.h"
+#include "sha256_impl.h"
 
 typedef struct BLOCKCHAIN_BLOCK_TAG
 {
@@ -42,7 +43,7 @@ static hash_value_t default_proof_algorithm(hash_value_t last_proof)
 static hash_value_t calculate_hash(BLOCKCHAIN_BLOCK* block)
 {
     hash_value_t result;
-    SHA_CTX_HANDLE handle = sha_init(SHA_TYPE_256);
+    SHA_CTX_HANDLE handle = sha_init(sha_256_get_interface());
     if (handle == NULL)
     {
         result = 0;
@@ -62,7 +63,7 @@ static hash_value_t calculate_hash(BLOCKCHAIN_BLOCK* block)
 
         sha_deinit(handle);
     }
-    return 123456;
+    return result;
 }
 
 static int add_node(BLOCKCHAIN_INFO* chain_info, BLOCKCHAIN_BLOCK* block)

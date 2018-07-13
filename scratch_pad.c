@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
+#if WIN32
 #include <vld.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -12,6 +14,9 @@
 #include "azure_c_shared_utility/buffer_.h"
 #include "azure_c_shared_utility/xlogging.h"
 #include "blockchain.h"
+
+#include "sha_algorithms.h"
+#include "sha256_impl.h"
 
 // Reference https://msdn.microsoft.com/en-us/library/windows/desktop/bb540796(v=vs.85).aspx
 /*
@@ -692,6 +697,26 @@ int main(void)
     CERT_INFO cert_info;
     memset(&cert_info, 0, sizeof(CERT_INFO));
 
+    SHA_CTX_HANDLE sha_handle = sha_init(sha_256_get_interface());
+
+    uint8_t msg_array[] = {'b', 'y', 'e'};
+    size_t array_len = sizeof(msg_array)/sizeof(msg_array[0]);
+    uint8_t msg_digest[SHA256_HASH_SIZE];
+    size_t digest_len = SHA256_HASH_SIZE;
+    sha_process(sha_handle, msg_array, array_len, msg_digest, digest_len);
+    sha_deinit(sha_handle);
+
+
+    //STRING_HANDLE strhandle = Base64_Encode_Bytes(msg_digest, digest_len);
+    for (size_t index = 0; index < SHA256_HASH_SIZE; index++)
+    {
+        printf("%x", msg_digest[index]);
+    }
+    //printf("%s\r\n", STRING_c_str(strhandle));
+
+
+
+    /*
     BLOCKCHAIN_HANDLE handle = blockchain_create(NULL);
     if (handle == NULL)
     {
@@ -708,13 +733,13 @@ int main(void)
             }
         }
         blockchain_destroy(handle);
-    }
+    }*/
     //result = parse_certificate_file(CERT_AGENT_FILENAME, &cert_info);
     //result = parse_certificate_file(CERT_CHAIN_FILENAME, &cert_info);
 
     //cert_info.certificate_pem = (char*)TEST_RSA_CERT;
     //result = parse_certificate(&cert_info);
 
-    //getchar();
+    getchar();
     return result;
 }

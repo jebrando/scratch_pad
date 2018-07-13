@@ -2,6 +2,8 @@
 #ifndef SHA_ALGORITHM_H
 #define SHA_ALGORITHM_H
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -12,21 +14,24 @@ extern "C"
 #include <stdint.h>
 #endif
 
-    #define SHA256_HASH_SIZE    32
-    #define SHA512_HASH_SIZE    64
-
+    typedef void* SHA_IMPL_HANDLE;
     typedef struct SHA_CTX_TAG* SHA_CTX_HANDLE;
 
-    typedef enum SHA_TYPE_TAG
+    typedef SHA_IMPL_HANDLE(*initialize_hash)(void);
+    typedef void(*deinitialize_hash)(SHA_IMPL_HANDLE handle);
+    typedef int(*process_hash)(SHA_IMPL_HANDLE handle, const uint8_t* msg_array, size_t array_len);
+    typedef int(*retrieve_hash_result)(SHA_IMPL_HANDLE handle, uint8_t msg_digest[], size_t digest_len);
+
+    typedef struct SHA_HASH_INTERFACE_TAG
     {
-        SHA_TYPE_1,
-        SHA_TYPE_256,
-        SHA_TYPE_512,
-    } SHA_TYPE;
+        initialize_hash Initialize_Hash;
+        deinitialize_hash Deinitialize_Hash;
+        process_hash Process_Hash;
+        retrieve_hash_result Retrieve_Hash_Result;
+    } SHA_HASH_INTERFACE;
 
-
-    extern SHA_CTX_HANDLE sha_init(SHA_TYPE type);
-    extern int sha_process(SHA_CTX_HANDLE handle, const uint8_t* msg_array, size_t array_len, uint8_t* msg_digest, size_t digest_len);
+    extern SHA_CTX_HANDLE sha_init(const SHA_HASH_INTERFACE* hash_interface);
+    extern int sha_process(SHA_CTX_HANDLE handle, const uint8_t* msg_array, size_t array_len, uint8_t msg_digest[], size_t digest_len);
     extern void sha_deinit(SHA_CTX_HANDLE handle);
 
 #ifdef __cplusplus

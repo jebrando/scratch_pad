@@ -13,7 +13,7 @@ extern "C" {
 
     #define SHA256_HASH_SIZE    32
 
-    extern const SHA_HASH_INTERFACE* sha_256_get_interface(void);
+    extern const SHA_HASH_INTERFACE* sha256_get_interface(void);
 
 #ifdef __cplusplus
 }

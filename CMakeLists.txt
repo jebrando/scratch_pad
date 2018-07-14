@@ -18,12 +18,14 @@ set(source_c_files
     ./sha_algorithms.c
     ./scratch_pad.c
     ./sha256_impl.c
+    ./sha512_impl.c
 )
 
 set(source_h_files
     ./blockchain.h
     ./sha_algorithms.h
     ./sha256_impl.h
+    ./sha512_impl.h
 )
 
 IF(WIN32)

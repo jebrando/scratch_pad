@@ -9,27 +9,21 @@
 
 typedef struct SHA_CTX_512_TAG
 {
-#ifdef USE_32BIT_ONLY
-    uint32_t intermediate_hash[SHA512_HASH_SIZE / 4]; /* Message Digest  */
-    uint32_t Length[4];                 /* Message length in bits */
-#else /* !USE_32BIT_ONLY */
     uint64_t intermediate_hash[SHA512_HASH_SIZE / 8]; /* Message Digest */
     uint64_t len_low, len_high;   /* Message length in bits */
-#endif /* USE_32BIT_ONLY */
 
     int_least16_t msg_block_index;  /* msg_block array index */
-                                        /* 1024-bit message blocks */
+                                    /* 1024-bit message blocks */
     uint8_t msg_block[SHA_512_MSG_BLOCK_SIZE];
-    int Computed;                       /* Is the digest computed?*/
-    int Corrupted;                      /* Is the digest corrupted? */
+    int is_computed;                       /* Is the digest computed? */
+    int is_corrupted;                      /* Is the digest corrupted? */
 } SHA_CTX_512;
 
 // Initial Hash Values: FIPS-180-2 section 5.3.2
-static uint32_t SHA256_H0[SHA256_HASH_SIZE / 4] = {
-    0x6A09E667, 0xBB67AE85,
-    0x3C6EF372, 0xA54FF53A,
-    0x510E527F, 0x9B05688C,
-    0x1F83D9AB, 0x5BE0CD19
+static uint64_t SHA512_H0[] = {
+    0x6A09E667F3BCC908ull, 0xBB67AE8584CAA73Bull, 0x3C6EF372FE94F82Bull,
+    0xA54FF53A5F1D36F1ull, 0x510E527FADE682D1ull, 0x9B05688C2B3E6C1Full,
+    0x1F83D9ABFB41BD6Bull, 0x5BE0CD19137E2179ull
 };
 
 /*
@@ -52,64 +46,82 @@ static uint32_t SHA256_H0[SHA256_HASH_SIZE / 4] = {
 #define SHA_Parity(x, y, z)  ((x) ^ (y) ^ (z))
 
 // add "length" to the length
-#define SHA224_256AddLength(sha_ctx, length)                \
+#define SHA384_512AddLength(sha_ctx, length)                \
   (add_temp = (sha_ctx)->len_low, (sha_ctx)->is_corrupted = \
     (((sha_ctx)->len_low += (length)) < add_temp) &&        \
     (++(sha_ctx)->len_high == 0) ? 1 : 0)
 
 /* Define the SHA shift, rotate left and rotate right macro */
-#define SHA256_SHR(bits,word)      ((word) >> (bits))
-#define SHA256_ROTL(bits,word)                         \
-  (((word) << (bits)) | ((word) >> (32-(bits))))
-#define SHA256_ROTR(bits,word)                         \
-  (((word) >> (bits)) | ((word) << (32-(bits))))
+#define SHA512_SHR(bits,word)      ((word) >> (bits))
+#define SHA512_ROTL(bits,word)                         \
+  (((word) << (bits)) | ((word) >> (64-(bits))))
+#define SHA512_ROTR(bits,word)                         \
+  (((word) >> (bits)) | ((word) << (64-(bits))))
 
 /* Define the SHA SIGMA and sigma macros */
-#define SHA256_SIGMA0(word)   \
-  (SHA256_ROTR( 2,word) ^ SHA256_ROTR(13,word) ^ SHA256_ROTR(22,word))
-#define SHA256_SIGMA1(word)   \
-  (SHA256_ROTR( 6,word) ^ SHA256_ROTR(11,word) ^ SHA256_ROTR(25,word))
-#define SHA256_sigma0(word)   \
-  (SHA256_ROTR( 7,word) ^ SHA256_ROTR(18,word) ^ SHA256_SHR( 3,word))
-#define SHA256_sigma1(word)   \
-  (SHA256_ROTR(17,word) ^ SHA256_ROTR(19,word) ^ SHA256_SHR(10,word))
+#define SHA512_SIGMA0(word)   \
+  (SHA512_ROTR(28,word) ^ SHA512_ROTR(34,word) ^ SHA512_ROTR(39,word))
+#define SHA512_SIGMA1(word)   \
+  (SHA512_ROTR(14,word) ^ SHA512_ROTR(18,word) ^ SHA512_ROTR(41,word))
+#define SHA512_sigma0(word)   \
+  (SHA512_ROTR( 1,word) ^ SHA512_ROTR( 8,word) ^ SHA512_SHR( 7,word))
+#define SHA512_sigma1(word)   \
+  (SHA512_ROTR(19,word) ^ SHA512_ROTR(61,word) ^ SHA512_SHR( 6,word))
 
-static void sha512_process_msg_block(SHA_CTX_256* sha_ctx)
+static void sha512_process_msg_block(SHA_CTX_512* sha_ctx)
 {
     /* Constants defined in FIPS-180-2, section 4.2.2 */
-    static const uint32_t K[64] = {
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b,
-        0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01,
-        0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7,
-        0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
-        0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152,
-        0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
-        0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
-        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819,
-        0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08,
-        0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f,
-        0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-        0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+    static const uint64_t K[80] = {
+        0x428A2F98D728AE22ull, 0x7137449123EF65CDull, 0xB5C0FBCFEC4D3B2Full,
+        0xE9B5DBA58189DBBCull, 0x3956C25BF348B538ull, 0x59F111F1B605D019ull,
+        0x923F82A4AF194F9Bull, 0xAB1C5ED5DA6D8118ull, 0xD807AA98A3030242ull,
+        0x12835B0145706FBEull, 0x243185BE4EE4B28Cull, 0x550C7DC3D5FFB4E2ull,
+        0x72BE5D74F27B896Full, 0x80DEB1FE3B1696B1ull, 0x9BDC06A725C71235ull,
+        0xC19BF174CF692694ull, 0xE49B69C19EF14AD2ull, 0xEFBE4786384F25E3ull,
+        0x0FC19DC68B8CD5B5ull, 0x240CA1CC77AC9C65ull, 0x2DE92C6F592B0275ull,
+        0x4A7484AA6EA6E483ull, 0x5CB0A9DCBD41FBD4ull, 0x76F988DA831153B5ull,
+        0x983E5152EE66DFABull, 0xA831C66D2DB43210ull, 0xB00327C898FB213Full,
+        0xBF597FC7BEEF0EE4ull, 0xC6E00BF33DA88FC2ull, 0xD5A79147930AA725ull,
+        0x06CA6351E003826Full, 0x142929670A0E6E70ull, 0x27B70A8546D22FFCull,
+        0x2E1B21385C26C926ull, 0x4D2C6DFC5AC42AEDull, 0x53380D139D95B3DFull,
+        0x650A73548BAF63DEull, 0x766A0ABB3C77B2A8ull, 0x81C2C92E47EDAEE6ull,
+        0x92722C851482353Bull, 0xA2BFE8A14CF10364ull, 0xA81A664BBC423001ull,
+        0xC24B8B70D0F89791ull, 0xC76C51A30654BE30ull, 0xD192E819D6EF5218ull,
+        0xD69906245565A910ull, 0xF40E35855771202Aull, 0x106AA07032BBD1B8ull,
+        0x19A4C116B8D2D0C8ull, 0x1E376C085141AB53ull, 0x2748774CDF8EEB99ull,
+        0x34B0BCB5E19B48A8ull, 0x391C0CB3C5C95A63ull, 0x4ED8AA4AE3418ACBull,
+        0x5B9CCA4F7763E373ull, 0x682E6FF3D6B2B8A3ull, 0x748F82EE5DEFB2FCull,
+        0x78A5636F43172F60ull, 0x84C87814A1F0AB72ull, 0x8CC702081A6439ECull,
+        0x90BEFFFA23631E28ull, 0xA4506CEBDE82BDE9ull, 0xBEF9A3F7B2C67915ull,
+        0xC67178F2E372532Bull, 0xCA273ECEEA26619Cull, 0xD186B8C721C0C207ull,
+        0xEADA7DD6CDE0EB1Eull, 0xF57D4F7FEE6ED178ull, 0x06F067AA72176FBAull,
+        0x0A637DC5A2C898A6ull, 0x113F9804BEF90DAEull, 0x1B710B35131C471Bull,
+        0x28DB77F523047D84ull, 0x32CAAB7B40C72493ull, 0x3C9EBE0A15C9BEBCull,
+        0x431D67C49C100D4Cull, 0x4CC5D4BECB3E42B6ull, 0x597F299CFC657E2Aull,
+        0x5FCB6FAB3AD6FAECull, 0x6C44198C4A475817ull
     };
-    int        t, t4;                   /* Loop counter */
-    uint32_t   temp1, temp2;            /* Temporary word value */
-    uint32_t   W[64];                   /* Word sequence */
-    uint32_t   A, B, C, D, E, F, G, H;  /* Word buffers */
+    int        t, t8;                   /* Loop counter */
+    uint64_t temp1, temp2;            /* Temporary word value */
+    uint64_t W[80];                   /* Word sequence */
+    uint64_t A, B, C, D, E, F, G, H;  /* Word buffers */
 
     // Initialize the first 16 words in the array W
-    for (t = t4 = 0; t < 16; t++, t4 += 4)
+    for (t = t8 = 0; t < 16; t++, t8 += 8)
     {
-        W[t] = (((uint32_t)sha_ctx->msg_block[t4]) << 24) |
-            (((uint32_t)sha_ctx->msg_block[t4 + 1]) << 16) |
-            (((uint32_t)sha_ctx->msg_block[t4 + 2]) << 8) |
-            (((uint32_t)sha_ctx->msg_block[t4 + 3]));
+        W[t] = (((uint64_t)sha_ctx->msg_block[t8]) << 56) |
+            (((uint64_t)sha_ctx->msg_block[t8 + 1]) << 48) |
+            (((uint64_t)sha_ctx->msg_block[t8 + 2]) << 40) |
+            (((uint64_t)sha_ctx->msg_block[t8 + 3]) << 32) |
+            (((uint64_t)sha_ctx->msg_block[t8 + 4]) << 24) |
+            (((uint64_t)sha_ctx->msg_block[t8 + 5]) << 16) |
+            (((uint64_t)sha_ctx->msg_block[t8 + 6]) << 8) |
+            (((uint64_t)sha_ctx->msg_block[t8 + 7]));
     }
 
-    for (t = 16; t < 64; t++)
+    for (t = 16; t < 80; t++)
     {
-        W[t] = SHA256_sigma1(W[t - 2]) + W[t - 7] +
-            SHA256_sigma0(W[t - 15]) + W[t - 16];
+        W[t] = SHA512_SIGMA1(W[t - 2]) + W[t - 7] +
+            SHA512_SIGMA0(W[t - 15]) + W[t - 16];
     }
 
     A = sha_ctx->intermediate_hash[0];
@@ -121,10 +133,10 @@ static void sha512_process_msg_block(SHA_CTX_256* sha_ctx)
     G = sha_ctx->intermediate_hash[6];
     H = sha_ctx->intermediate_hash[7];
 
-    for (t = 0; t < 64; t++)
+    for (t = 0; t < 80; t++)
     {
-        temp1 = H + SHA256_SIGMA1(E) + SHA_Ch(E, F, G) + K[t] + W[t];
-        temp2 = SHA256_SIGMA0(A) + SHA_Maj(A, B, C);
+        temp1 = H + SHA512_SIGMA1(E) + SHA_Ch(E, F, G) + K[t] + W[t];
+        temp2 = SHA512_SIGMA0(A) + SHA_Maj(A, B, C);
         H = G;
         G = F;
         F = E;
@@ -147,7 +159,7 @@ static void sha512_process_msg_block(SHA_CTX_256* sha_ctx)
     sha_ctx->msg_block_index = 0;
 }
 
-static void pad_256_msg(SHA_CTX_256* sha_ctx, unsigned char pad_byte)
+static void pad_512_msg(SHA_CTX_512* sha_ctx, unsigned char pad_byte)
 {
     /*
     * Check to see if the current message block is too small to hold
@@ -155,10 +167,10 @@ static void pad_256_msg(SHA_CTX_256* sha_ctx, unsigned char pad_byte)
     * block, process it, and then continue padding into a second
     * block.
     */
-    if (sha_ctx->msg_block_index >= (SHA_256_MSG_BLOCK_SIZE - 8))
+    if (sha_ctx->msg_block_index >= (SHA_512_MSG_BLOCK_SIZE - 8))
     {
         sha_ctx->msg_block[sha_ctx->msg_block_index++] = pad_byte;
-        while (sha_ctx->msg_block_index < SHA_256_MSG_BLOCK_SIZE)
+        while (sha_ctx->msg_block_index < SHA_512_MSG_BLOCK_SIZE)
         {
             sha_ctx->msg_block[sha_ctx->msg_block_index++] = 0;
         }
@@ -169,7 +181,7 @@ static void pad_256_msg(SHA_CTX_256* sha_ctx, unsigned char pad_byte)
         sha_ctx->msg_block[sha_ctx->msg_block_index++] = pad_byte;
     }
 
-    while (sha_ctx->msg_block_index < (SHA_256_MSG_BLOCK_SIZE - 8))
+    while (sha_ctx->msg_block_index < (SHA_512_MSG_BLOCK_SIZE - 8))
     {
         sha_ctx->msg_block[sha_ctx->msg_block_index++] = 0;
     }
@@ -187,53 +199,69 @@ static void pad_256_msg(SHA_CTX_256* sha_ctx, unsigned char pad_byte)
     sha512_process_msg_block(sha_ctx);
 }
 
-static int sha512_retrieve_result(SHA_CTX_256* sha_ctx, uint8_t* msg_digest, size_t digest_len)
+static int sha512_retrieve_result(SHA_IMPL_HANDLE sha_handle, uint8_t* msg_digest, size_t digest_len)
 {
     int result;
-    if (sha_ctx->is_corrupted)
+    if (sha_handle == NULL || msg_digest == NULL || digest_len == 0)
     {
         result = __LINE__;
     }
     else
     {
-        if (!sha_ctx->is_computed)
+        SHA_CTX_512* sha_ctx = (SHA_CTX_512*)sha_handle;
+        if (sha_ctx->is_corrupted)
         {
-            //finalize_256_result(sha_ctx, 0x80);
-            pad_256_msg(sha_ctx, 0x80);
-            // message may be sensitive, so clear it out
-            for (size_t index = 0; index < SHA_256_MSG_BLOCK_SIZE; ++index)
-            {
-                sha_ctx->msg_block[index] = 0;
-            }
-            sha_ctx->len_low = 0;  /* and clear length */
-            sha_ctx->len_high = 0;
-            sha_ctx->is_computed = 1;
+            result = __LINE__;
         }
-        for (size_t index = 0; index < digest_len; index++)
+        else
         {
-            msg_digest[index] = (uint8_t)(sha_ctx->intermediate_hash[index >> 2] >> 8 * (3 - (index & 0x03)));
+            if (!sha_ctx->is_computed)
+            {
+                //finalize_256_result(sha_ctx, 0x80);
+                pad_512_msg(sha_ctx, 0x80);
+                // message may be sensitive, so clear it out
+                for (size_t index = 0; index < SHA_512_MSG_BLOCK_SIZE; ++index)
+                {
+                    sha_ctx->msg_block[index] = 0;
+                }
+                sha_ctx->len_low = 0;  /* and clear length */
+                sha_ctx->len_high = 0;
+                sha_ctx->is_computed = 1;
+            }
+            for (size_t index = 0; index < digest_len; index++)
+            {
+                msg_digest[index] = (uint8_t)(sha_ctx->intermediate_hash[index >> 2] >> 8 * (3 - (index & 0x03)));
+            }
         }
     }
     return result;
 }
 
-static int sha512_process_hash(SHA_CTX_256* sha_ctx, const uint8_t* msg_array, size_t array_len)
+static int sha512_process_hash(SHA_IMPL_HANDLE sha_handle, const uint8_t* msg_array, size_t array_len)
 {
     int result;
-    if (sha_ctx->is_computed || sha_ctx->is_corrupted)
+    if (sha_handle == NULL || msg_array == NULL || array_len == 0)
     {
         result = __LINE__;
     }
     else
     {
-        uint32_t add_temp;
-
-        while (array_len-- && sha_ctx->is_corrupted)
+        SHA_CTX_512* sha_ctx = (SHA_CTX_512*)sha_handle;
+        if (sha_ctx->is_computed || sha_ctx->is_corrupted)
         {
-            sha_ctx->msg_block[sha_ctx->msg_block_index] = (*msg_array & 0xFF);
-            if (!SHA224_256AddLength(sha_ctx, 8) && (sha_ctx->msg_block_index == SHA_256_MSG_BLOCK_SIZE))
+            result = __LINE__;
+        }
+        else
+        {
+            uint64_t add_temp;
+
+            while (array_len-- && !sha_ctx->is_corrupted)
             {
-                sha512_process_msg_block(sha_ctx);
+                sha_ctx->msg_block[sha_ctx->msg_block_index] = (*msg_array & 0xFF);
+                if (!SHA384_512AddLength(sha_ctx, 8) && (sha_ctx->msg_block_index == SHA_512_MSG_BLOCK_SIZE))
+                {
+                    sha512_process_msg_block(sha_ctx);
+                }
             }
         }
     }
@@ -242,16 +270,16 @@ static int sha512_process_hash(SHA_CTX_256* sha_ctx, const uint8_t* msg_array, s
 
 static SHA_IMPL_HANDLE sha512_initialize(void)
 {
-    SHA_CTX_256* result;
-    if ((result = malloc(sizeof(SHA_CTX_256))) == NULL)
+    SHA_CTX_512* result;
+    if ((result = malloc(sizeof(SHA_CTX_512))) == NULL)
     {
     }
     else
     {
-        memset(result, 0, sizeof(SHA_CTX_256));
+        memset(result, 0, sizeof(SHA_CTX_512));
         for (size_t index = 0; index < 8; index++)
         {
-            result->intermediate_hash[index] = SHA256_H0[index];
+            result->intermediate_hash[index] = SHA512_H0[index];
         }
     }
     return result;

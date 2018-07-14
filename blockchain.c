@@ -43,7 +43,7 @@ static hash_value_t default_proof_algorithm(hash_value_t last_proof)
 static hash_value_t calculate_hash(BLOCKCHAIN_BLOCK* block)
 {
     hash_value_t result;
-    SHA_CTX_HANDLE handle = sha_init(sha_256_get_interface());
+    SHA_CTX_HANDLE handle = sha_init(sha256_get_interface());
     if (handle == NULL)
     {
         result = 0;

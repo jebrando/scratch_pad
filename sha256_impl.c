@@ -183,58 +183,74 @@ static void pad_256_msg(SHA_CTX_256* sha_ctx, unsigned char pad_byte)
     sha256_process_msg_block(sha_ctx);
 }
 
-static int sha256_retrieve_result(SHA_CTX_256* sha_ctx, uint8_t msg_digest[], size_t digest_len)
+static int sha256_retrieve_result(SHA_IMPL_HANDLE sha_handle, uint8_t msg_digest[], size_t digest_len)
 {
     int result;
-    if (sha_ctx->is_corrupted)
+    if (sha_handle == NULL || msg_digest == NULL || digest_len == 0)
     {
         result = __LINE__;
     }
     else
     {
-        result = 0;
-        if (!sha_ctx->is_computed)
+        SHA_CTX_256* sha_ctx = (SHA_CTX_256*)sha_handle;
+        if (sha_ctx->is_corrupted)
         {
-            //finalize_256_result(sha_ctx, 0x80);
-            pad_256_msg(sha_ctx, 0x80);
-            // message may be sensitive, so clear it out
-            for (size_t index = 0; index < SHA_256_MSG_BLOCK_SIZE; ++index)
-            {
-                sha_ctx->msg_block[index] = 0;
-            }
-            sha_ctx->len_low = 0;  /* and clear length */
-            sha_ctx->len_high = 0;
-            sha_ctx->is_computed = 1;
+            result = __LINE__;
         }
-        for (size_t index = 0; index < digest_len; index++)
+        else
         {
-            msg_digest[index] = (uint8_t)(sha_ctx->intermediate_hash[index >> 2] >> 8 * (3 - (index & 0x03)));
+            result = 0;
+            if (!sha_ctx->is_computed)
+            {
+                //finalize_256_result(sha_ctx, 0x80);
+                pad_256_msg(sha_ctx, 0x80);
+                // message may be sensitive, so clear it out
+                for (size_t index = 0; index < SHA_256_MSG_BLOCK_SIZE; ++index)
+                {
+                    sha_ctx->msg_block[index] = 0;
+                }
+                sha_ctx->len_low = 0;  /* and clear length */
+                sha_ctx->len_high = 0;
+                sha_ctx->is_computed = 1;
+            }
+            for (size_t index = 0; index < digest_len; index++)
+            {
+                msg_digest[index] = (uint8_t)(sha_ctx->intermediate_hash[index >> 2] >> 8 * (3 - (index & 0x03)));
+            }
         }
     }
     return result;
 }
 
-static int sha256_process_hash(SHA_CTX_256* sha_ctx, const uint8_t* msg_array, size_t array_len)
+static int sha256_process_hash(SHA_IMPL_HANDLE sha_handle, const uint8_t* msg_array, size_t array_len)
 {
     int result;
-    // Only compute the hash once and if we're errored then fail
-    if (sha_ctx->is_computed || sha_ctx->is_corrupted)
+    if (sha_handle == NULL || msg_array == NULL || array_len == 0)
     {
         result = __LINE__;
     }
     else
     {
-        uint32_t add_temp;
-
-        result = 0;
-        while (array_len-- && !sha_ctx->is_corrupted)
+        SHA_CTX_256* sha_ctx = (SHA_CTX_256*)sha_handle;
+        // Only compute the hash once and if we're errored then fail
+        if (sha_ctx->is_computed || sha_ctx->is_corrupted)
         {
-            sha_ctx->msg_block[sha_ctx->msg_block_index++] = (*msg_array & 0xFF);
-            if (!SHA224_256AddLength(sha_ctx, 8) && (sha_ctx->msg_block_index == SHA_256_MSG_BLOCK_SIZE))
+            result = __LINE__;
+        }
+        else
+        {
+            uint32_t add_temp;
+
+            result = 0;
+            while (array_len-- && !sha_ctx->is_corrupted)
             {
-                sha256_process_msg_block(sha_ctx);
+                sha_ctx->msg_block[sha_ctx->msg_block_index++] = (*msg_array & 0xFF);
+                if (!SHA224_256AddLength(sha_ctx, 8) && (sha_ctx->msg_block_index == SHA_256_MSG_BLOCK_SIZE))
+                {
+                    sha256_process_msg_block(sha_ctx);
+                }
+                msg_array++;
             }
-            msg_array++;
         }
     }
     return result;
@@ -273,7 +289,7 @@ static SHA_HASH_INTERFACE sha_interface =
     sha256_retrieve_result
 };
 
-const SHA_HASH_INTERFACE* sha_256_get_interface(void)
+const SHA_HASH_INTERFACE* sha256_get_interface(void)
 {
     return &sha_interface;
 }

@@ -200,5 +200,5 @@ int add_block(BLOCKCHAIN_HANDLE handle, const unsigned char* transaction, size_t
             }
         }
     }
-    return 0;
+    return result;
 }

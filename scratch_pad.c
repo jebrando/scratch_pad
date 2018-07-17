@@ -16,7 +16,8 @@
 #include "blockchain.h"
 
 #include "sha_algorithms.h"
-#include "sha256_impl.h"
+//#include "sha256_impl.h"
+#include "sha512_impl.h"
 
 // Reference https://msdn.microsoft.com/en-us/library/windows/desktop/bb540796(v=vs.85).aspx
 /*
@@ -697,22 +698,22 @@ int main(void)
     CERT_INFO cert_info;
     memset(&cert_info, 0, sizeof(CERT_INFO));
 
-    /*
-    SHA_CTX_HANDLE sha_handle = sha_init(sha256_get_interface());
+    //SHA_CTX_HANDLE sha_handle = sha_init(sha256_get_interface());
+    SHA_CTX_HANDLE sha_handle = sha_init(sha512_get_interface());
 
     uint8_t msg_array[] = {'b', 'y', 'e'};
     size_t array_len = sizeof(msg_array)/sizeof(msg_array[0]);
-    uint8_t msg_digest[SHA256_HASH_SIZE];
-    size_t digest_len = SHA256_HASH_SIZE;
+    uint8_t msg_digest[SHA512_HASH_SIZE];
+    size_t digest_len = SHA512_HASH_SIZE;
     sha_process(sha_handle, msg_array, array_len, msg_digest, digest_len);
     sha_deinit(sha_handle);
 
-    for (size_t index = 0; index < SHA256_HASH_SIZE; index++)
+    for (size_t index = 0; index < SHA512_HASH_SIZE; index++)
     {
         printf("%x", msg_digest[index]);
-    }*/
+    }
 
-    BLOCKCHAIN_HANDLE handle = blockchain_create(NULL);
+    /*BLOCKCHAIN_HANDLE handle = blockchain_create(NULL);
     if (handle == NULL)
     {
         printf("blockchain create failed\r\n");
@@ -723,12 +724,12 @@ int main(void)
         {
             if (add_block(handle, (const unsigned char*)&trans_list[index], sizeof(trans_list[index])) != 0)
             {
-                printf("Adding item %ud failed\r\n", index);
+                printf("Adding item %zu failed\r\n", index);
                 break;
             }
         }
         blockchain_destroy(handle);
-    }
+    }*/
     //result = parse_certificate_file(CERT_AGENT_FILENAME, &cert_info);
     //result = parse_certificate_file(CERT_CHAIN_FILENAME, &cert_info);
 

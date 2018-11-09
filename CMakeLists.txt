@@ -7,17 +7,35 @@ project(scratch_pad)
 
 set(INCLUDE_DIR ".")
 
-add_subdirectory(c-utility)
+#add_subdirectory(c-utility)
 
-compileAsC99()
+#compileAsC99()
 
-include_directories(${HSM_INCLUDE_DIR} ${SHARED_UTIL_INC_FOLDER})
+include_directories(./inc)
 
 set(source_c_files
+    src/bt_beacon_mgr.c
     ./scratch_pad.c
 )
 
+if (WIN32)
+    set(source_c_files
+        ${source_c_files}
+        src/bt_device_discovery_win.c
+        src/bt_device_mgr_win.c
+    )
+else()
+    set(source_c_files
+        ${source_c_files}
+        src/bt_device_discovery_linux.c
+        src/bt_device_mgr_linux.c
+    )
+endif()
+
 set(source_h_files
+    inc/bt_beacon_mgr.h
+    inc/bt_device_discovery.h
+    inc/bt_device_mgr.h
 )
 
 IF(WIN32)
@@ -33,4 +51,4 @@ ELSE()
 ENDIF(WIN32)
 
 add_executable(scratch_pad ${source_c_files})
-target_link_libraries(scratch_pad aziotsharedutil)
+target_link_libraries(scratch_pad bluetooth)

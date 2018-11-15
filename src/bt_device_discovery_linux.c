@@ -6,13 +6,14 @@
 #include <bluetooth/hci_lib.h>
 #include <unistd.h>
 #include <inttypes.h>
+#include "azure_c_shared_utility/singlylinkedlist.h"
 
 typedef struct BT_DEVICE_LIST_TAG
 {
     int dev_id;
     size_t resp_count;
     void* device_list;
-
+    SINGLYLINKEDLIST_HANDLE list_handle;
 } BT_DEVICE_LIST;
 
 #define MAX_RESPONSE_VALUE      128
@@ -21,10 +22,7 @@ typedef struct BT_DEVICE_LIST_TAG
 BT_DISCOVER_HANDLE bt_discover_create(const char* address, size_t max_response)
 {
     BT_DEVICE_LIST* result;
-    if ((result = (BT_DEVICE_LIST*)malloc(sizeof(BT_DEVICE_LIST))) == NULL)
-    {
-    }
-    else
+    if ((result = (BT_DEVICE_LIST*)malloc(sizeof(BT_DEVICE_LIST))) != NULL)
     {
         int len = 8;
         int socket;
@@ -47,6 +45,17 @@ BT_DISCOVER_HANDLE bt_discover_create(const char* address, size_t max_response)
             free(result);
             result = NULL;
         }
+        // Setup the scan parameters
+        else if (hci_le_set_scan_parameters(socket, 0x01, htobs(0x0010), htobs(0x0010), 0x00, 0x00, 1000) < 0)
+        {
+            free(result);
+            result = NULL;
+        }
+        else if (hci_le_set_scan_enable(socket, 0x01, 1, 1000) < 0)
+        {
+            free(result);
+            result = NULL;
+        }
         else
         {
             int resp_count;
@@ -59,6 +68,12 @@ BT_DISCOVER_HANDLE bt_discover_create(const char* address, size_t max_response)
                 result = NULL;
             }
             else if ((resp_count = hci_inquiry(result->dev_id, len, max_response, NULL, &bt_inquiry, flags)) > 0)
+            {
+                free(bt_inquiry);
+                free(result);
+                result = NULL;
+            }
+            else if ((result->list_handle = singlylinkedlist_create()) == NULL)
             {
                 free(bt_inquiry);
                 free(result);
@@ -80,6 +95,7 @@ BT_DISCOVER_HANDLE bt_discover_create(const char* address, size_t max_response)
                     else
                     {
                         // Add it to the list here
+                        singlylinkedlist_add(result->list_handle, 0);
                     }
                     printf("%s %s\n", addr_string, device_name);
                 }
@@ -95,6 +111,7 @@ void bt_discover_destroy(BT_DISCOVER_HANDLE handle)
 {
     if (handle != NULL)
     {
+        singlylinkedlist_destroy(handle->list_handle);
         free(handle);
     }
 }

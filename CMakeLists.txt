@@ -4,14 +4,19 @@
 cmake_minimum_required(VERSION 2.8.11)
 project(scratch_pad)
 
-
 set(INCLUDE_DIR ".")
-
-#add_subdirectory(c-utility)
 
 #compileAsC99()
 
+add_subdirectory(deps/c-utility)
+
 include_directories(./inc)
+include_directories(${AZURE_C_SHARED_UTILITY_INCLUDES})
+
+message("Message: ${AZURE_C_SHARED_UTILITY_INCLUDES}")
+
+# Use solution folders.
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 set(source_c_files
     src/bt_beacon_mgr.c
@@ -51,4 +56,4 @@ ELSE()
 ENDIF(WIN32)
 
 add_executable(scratch_pad ${source_c_files})
-target_link_libraries(scratch_pad bluetooth)
+target_link_libraries(scratch_pad bluetooth aziotsharedutil)

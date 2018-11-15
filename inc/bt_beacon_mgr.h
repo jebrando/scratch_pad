@@ -18,9 +18,20 @@ typedef enum BEACON_SERVICE_TYPE_TAG
     BEACON_TYPE_ALTBEACON
 } BEACON_SERVICE_TYPE;
 
+typedef struct BEACON_DEVICE_INFO_TAG
+{
+    bt_uuid_t device_uuid;
+    uint16_t major_num;
+    uint16_t minor_num;
+    uint8_t tx_power;
+    uint8_t range_meters;
+} BEACON_DEVICE_INFO;
+
+typedef void(*BEACON_DEVICE_CALLBACK)(BEACON_DEVICE_INFO dev_info, void* user_ctx);
+
 extern BT_BEACON_HANDLE bt_beacon_create(BEACON_SERVICE_TYPE type);
 extern void bt_beacon_destroy(BT_BEACON_HANDLE handle);
-extern void bt_beacon_process(BT_BEACON_HANDLE handle);
+extern void bt_beacon_process(BT_BEACON_HANDLE handle, BEACON_DEVICE_CALLBACK beacon_cb, void* user_ctx);
 
 // ****** Scanner Functions ******
 // iBeacon

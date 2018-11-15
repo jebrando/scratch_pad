@@ -34,7 +34,7 @@ void bt_beacon_destroy(BT_BEACON_HANDLE handle)
     }
 }
 
-void bt_beacon_process(BT_BEACON_HANDLE handle)
+void bt_beacon_process(BT_BEACON_HANDLE handle, BEACON_DEVICE_CALLBACK beacon_cb, void* user_ctx)
 {
     if (handle != NULL)
     {
